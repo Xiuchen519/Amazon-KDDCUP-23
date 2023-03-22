@@ -259,7 +259,7 @@ class SeqPoolingLayer(torch.nn.Module):
         if self.pooling_type == 'mask':
             # Data type of mask_token should be bool and 
             # the shape of mask_token should be [B, L]
-            assert mask_token != None, "mask_token can be None when pooling_type is 'mask'."
+            assert mask_token != None, "mask_token can\'t be None when pooling_type is 'mask'."
             result = batch_seq_embeddings[mask_token]
         elif self.pooling_type in ['origin', 'concat', 'mean', 'sum', 'max']:
             mask = torch.arange(L).unsqueeze(0).unsqueeze(2).to(batch_seq_embeddings.device)

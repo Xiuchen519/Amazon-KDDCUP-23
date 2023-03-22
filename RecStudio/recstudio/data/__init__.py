@@ -1,5 +1,5 @@
 from recstudio.data.dataset import TripletDataset, SeqDataset, UserDataset, FullSeqDataset
-from recstudio.data.advance_dataset import ALSDataset
+from recstudio.data.advance_dataset import ALSDataset, KDDCUPDataset
 
 import os
 

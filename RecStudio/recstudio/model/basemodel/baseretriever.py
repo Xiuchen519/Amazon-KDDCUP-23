@@ -7,7 +7,8 @@ from ..scorer import *
 from . import Recommender
 from ..loss_func import FullScoreLoss
 from recstudio.ann.sampler import *
-from recstudio.data import UserDataset, SeqDataset
+from recstudio.data import UserDataset, SeqDataset, TripletDataset
+import pandas as pd 
 
 
 class BaseRetriever(Recommender):
@@ -429,3 +430,20 @@ class BaseRetriever(Recommender):
             label = batch[self.fiid].view(-1, 1) == topk_items
             pos_rating = batch[self.frating].view(-1, 1)
         return {f"{name}@{cutoff}": func(label, pos_rating, cutoff) for cutoff in cutoffs for name, func in rank_m}, bs
+    
+    def predict_step(self, batch, dataset:TripletDataset):
+        topk = self.config['eval']['predict_topk']
+        score, topk_items = self.topk(batch, topk, batch['user_hist'])
+        
+        # turn id in topk_items to token
+        topk_item_tokens = []
+        for topk_items_u in topk_items:
+            tokens = [dataset.field2tokens[self.fiid][item_id] for item_id in topk_items_u]
+            topk_item_tokens.append(tokens)
+
+        locales_ids = batch['in_' + 'locale']
+        locale_tokens = [dataset.field2tokens['locale'][locale_id[0]] for locale_id in locales_ids]
+
+        prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens})
+
+        return prediction_df

@@ -3,7 +3,8 @@ import copy
 import numpy as np 
 import pandas as pd 
 import torch
-from recstudio.data.dataset import TripletDataset, SeqDataset
+from torch.nn.utils.rnn import pad_sequence
+from recstudio.data.dataset import TripletDataset, SeqDataset, SeqToSeqDataset, TensorFrame
 
 
 class ALSDataset(TripletDataset):
@@ -90,10 +91,10 @@ class SessionDataset(SeqDataset):
     pass
 
 
-class KDDCUPDataset(TripletDataset):
+class KDDCUPDataset(SeqToSeqDataset):
 
 
-    def _prepare_user_item_feat(self):
+    # def _prepare_user_item_feat(self):
         # if self.user_feat is not None:
         #     self.user_feat.set_index(self.fuid, inplace=True)
         #     self.user_feat = self.user_feat.reindex(np.arange(self.num_users))
@@ -111,9 +112,98 @@ class KDDCUPDataset(TripletDataset):
         # else:
         #     self.item_feat = pd.DataFrame(
         #         {self.fiid: np.arange(self.num_items)})
-        pass
+        # pass
             
+    def _get_pos_data(self, index):
+        # data_index : [user_id, start, end]
+        # user interval [start, end) both including. 
+        # training:
+        # source: interval [idx[:, 1], idx[:, 2] - 1]
+        # target: interval [idx[:, 1] + 1, idx[:, 2]]
+        # valid/test:
+        # source: interval [idx[:, 1], idx[:, 2] - 1]
+        # target: idx[:, 2]
+        
+        if getattr(self, 'predict_mode', False):
+            idx = self.data_index[index]
+            data = {self.fuid: idx[:, 0]}
+            data.update(self.user_feat[data[self.fuid]])
+            start = idx[:, 1]
+            end = idx[:, 2]
+            lens = end - start
+            data['seqlen'] = lens
+            l_source = torch.cat([torch.arange(s, e) for s, e in zip(start, end)])
+            # source_data
+            source_data = self.inter_feat[l_source]
+            for k in source_data:
+                source_data[k] = pad_sequence(source_data[k].split(
+                    tuple(lens.numpy())), batch_first=True)
+            source_data.update(self.item_feat[source_data[self.fiid]])
+            
+            for k, v in source_data.items():
+                if k != self.fuid:
+                    data['in_' + k] = v
+            return data
+        else:
+            return super()._get_pos_data(index)
 
-    def build_test_dataset(test_data_path:str):
-        pass
+    def build_test_dataset(self, test_data_path:str):
+
+        test_inter_fields = ['sess_id:token', 'product_id:token', 'timestamp:float', 'locale:token']
+        # load test feat
+        test_inter_feat = super()._load_feat(
+            feat_path=test_data_path, 
+            header=0, 
+            sep=',',
+            feat_cols=test_inter_fields)
+        
+        test_dataset = copy.copy(self)
+        test_dataset.field2tokens['sess_id'] = np.concatenate([['[PAD]'], np.arange(test_inter_feat['sess_id'].astype('int').max() + 1)])
+        test_dataset.field2token2idx['sess_id'] = {token : i for i, token in enumerate(test_dataset.field2tokens['sess_id'])}
+        test_dataset.user_feat = pd.DataFrame(
+                {self.fuid: np.arange(test_dataset.num_users)})
+
+        # map ids 
+        for inter_field in test_inter_fields:
+            field_name, field_type = inter_field.split(':')[0], inter_field.split(':')[1]
+            if 'float' in field_type:
+                continue
+
+            test_inter_feat[field_name] = test_inter_feat[field_name].map(
+                lambda x : test_dataset.field2token2idx[field_name][x] if x in test_dataset.field2token2idx[field_name] else test_dataset.field2token2idx[field_name]['[PAD]']
+                )
+            
+        # get splits and uids 
+        test_inter_feat.sort_values(by=[self.fuid, self.ftime], inplace=True)
+        user_count = test_inter_feat[self.fuid].groupby(
+                test_inter_feat[self.fuid], sort=False).count()
+
+        cumsum = user_count.cumsum()
+        splits = cumsum.to_numpy()
+        splits = np.concatenate([[0], splits])
+        splits = np.array(list(zip(splits[:-1], splits[1:])))
+        uids = user_count.index
+
+        # transform test_inter_feat to TensorFrame 
+
+        test_inter_feat = TensorFrame.fromPandasDF(test_inter_feat, self)
+        test_dataset.user_feat = TensorFrame.fromPandasDF(test_dataset.user_feat, self)
+        test_dataset.inter_feat = test_inter_feat
+        
+        test_dataset.data_index = self._get_data_idx((splits, uids))[0]
+        user_hist, user_count = test_dataset.get_hist(True)
+        test_dataset.user_hist = user_hist
+        test_dataset.user_count = user_count
+        
+        return test_dataset
+    
+    def prediction_loader(self, batch_size, shuffle=False, num_workers=0, drop_last=False, ddp=False):
+        r"""Return a dataloader for prediction"""
+        self.eval_mode = True 
+        self.predict_mode = True # set mode to prediction.
+        return self.loader(batch_size, shuffle, num_workers, drop_last, ddp)
+
+
+
+        
         

@@ -449,12 +449,16 @@ class TripletDataset(Dataset):
             if col_count > 0:
                 cols = cols[col_ind]
                 user_item_mat = user_item_mat[:, col_ind]
+            else:
+                raise ValueError('All the interactions will be filtered, please adjust the min_item_inter.')
             row_sum = np.squeeze(user_item_mat.sum(axis=1).A)
             row_ind = row_sum >= min_user_inter
             row_count = np.count_nonzero(row_ind)
             if row_count > 0:
                 rows = rows[row_ind]
                 user_item_mat = user_item_mat[row_ind, :]
+            else:
+                raise ValueError('All the interactions will be filtered, please adjust the min_user_inter.')
             if col_count == n and row_count == m:
                 break
             else:
@@ -1326,7 +1330,7 @@ class SeqToSeqDataset(SeqDataset):
         # bug to fix : "user" split mode
         # split: [start, train_end, valid_end, test_end]
         splits, uids = splits
-        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0]).max()
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0] - 1).max()
 
         def keep_first_item(dix, part):
             # self.drop_dup is set to False in SeqDataset
@@ -1347,6 +1351,8 @@ class SeqToSeqDataset(SeqDataset):
         return output
 
     def _get_pos_data(self, index):
+        # data_index : [user_id, start, end]
+        # user interval [start, end) both including. 
         # training:
         # source: interval [idx[:, 1], idx[:, 2] - 1]
         # target: interval [idx[:, 1] + 1, idx[:, 2]]
