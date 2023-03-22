@@ -1,0 +1,5 @@
+model:
+  dropout_rate: 0.3
+
+train:
+  negative_count: 1

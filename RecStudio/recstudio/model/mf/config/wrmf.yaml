@@ -1,0 +1,4 @@
+train:
+  alpha: 1
+  batch_size: 100
+  lambda: 0.5

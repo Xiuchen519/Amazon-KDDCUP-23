@@ -1,0 +1,7 @@
+data:
+  test_rep: True
+  train_rep: True
+  split_ratio: 2
+
+eval:
+  batch_size: 128

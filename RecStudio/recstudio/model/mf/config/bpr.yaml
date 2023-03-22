@@ -1,0 +1,3 @@
+train:
+    negative_count: 1
+    excluding_hist: False

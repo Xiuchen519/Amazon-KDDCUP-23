@@ -1,0 +1,5 @@
+model:
+  pooling_type: mean
+
+train:
+  negative_count: 1

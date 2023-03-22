@@ -1,0 +1,7 @@
+train:
+  alpha: 1
+  epochs: 1
+  gpu: ~
+  knn: 100
+  l1_ratio: 0.1
+  positive_only: True

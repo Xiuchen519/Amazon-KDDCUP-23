@@ -1,0 +1,35 @@
+url: ./data_for_recstudio
+user_id_field: &u sess_id:token
+item_id_field: &i product_id:token
+rating_field: ~
+time_field: &t timestamp:float
+time_format: ~
+
+encoding_method: utf-8
+inter_feat_name: inter_feat.csv
+inter_feat_field: [*u, *i, *t, locale:token]
+inter_feat_header: 0
+
+user_feat_name: ~
+user_feat_field: ~
+user_feat_header: ~
+
+item_feat_name: ~ #[products_train.csv]
+item_feat_field: [[*i, locale:str, title:str, price:float, brand:str, color:str, size:str, model:token, material:str, author:str, desc:str]]
+item_feat_header: 0
+
+use_fields: ~
+field_separator: ","
+seq_separator: " "
+min_user_inter: 5
+min_item_inter: 5
+field_max_len: ~
+low_rating_threshold: ~
+max_seq_len: 50
+
+# network feature, including social network and knowledge graph, the first two fields are remapped the corresponding features
+network_feat_name: ~ #[[social.txt], [ml-100k.kg, ml-100k.link]]
+mapped_feat_field: [*u, *i]
+network_feat_field: [[[source_id:token, target_id:token]], [[head_id:token, tail_id:token, relation_id:token], [*i, entity_id:token]]]
+
+save_cache: True # whether to save processed dataset to cache.
