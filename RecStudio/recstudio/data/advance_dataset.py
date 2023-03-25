@@ -5,6 +5,11 @@ import pandas as pd
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from recstudio.data.dataset import TripletDataset, SeqDataset, SeqToSeqDataset, TensorFrame
+from tqdm import tqdm 
+import logging 
+import warnings
+import scipy.sparse as ssp
+
 
 
 class ALSDataset(TripletDataset):
@@ -93,26 +98,93 @@ class SessionDataset(SeqDataset):
 
 class KDDCUPDataset(SeqToSeqDataset):
 
-
-    # def _prepare_user_item_feat(self):
+    def _filter(self, min_user_inter, min_item_inter):
+        self._filter_ratings(self.config.get('low_rating_thres', None))
+        item_list = self.inter_feat[self.fiid]
+        item_idx_list, items = pd.factorize(item_list)
+        user_list = self.inter_feat[self.fuid]
+        user_idx_list, users = pd.factorize(user_list)
+        warnings.simplefilter('ignore', ssp.SparseEfficiencyWarning)
+        user_item_mat = ssp.csc_matrix(
+            (np.ones_like(user_idx_list), (user_idx_list, item_idx_list)))
+        cols = np.arange(items.size)
+        rows = np.arange(users.size)
+        while(True): # TODO: only delete users/items in inter_feat, users/items in user/item_feat should also be deleted.
+            m, n = user_item_mat.shape
+            col_sum = np.squeeze(user_item_mat.sum(axis=0).A)
+            col_ind = col_sum >= min_item_inter
+            col_count = np.count_nonzero(col_ind)
+            if col_count > 0:
+                cols = cols[col_ind]
+                user_item_mat = user_item_mat[:, col_ind]
+            else:
+                raise ValueError('All the interactions will be filtered, please adjust the min_item_inter.')
+            row_sum = np.squeeze(user_item_mat.sum(axis=1).A)
+            row_ind = row_sum >= min_user_inter
+            row_count = np.count_nonzero(row_ind)
+            if row_count > 0:
+                rows = rows[row_ind]
+                user_item_mat = user_item_mat[row_ind, :]
+            else:
+                raise ValueError('All the interactions will be filtered, please adjust the min_user_inter.')
+            if col_count == n and row_count == m:
+                break
+            else:
+                pass
+        #
+        keep_users = set(users[rows])
+        keep_items = set(items[cols])
+        keep = user_list.isin(keep_users)
+        keep &= item_list.isin(keep_items)
+        self.inter_feat = self.inter_feat[keep]
+        self.inter_feat.reset_index(drop=True, inplace=True)
+        # do not filter item or user feat even if they are not in inter_feat
         # if self.user_feat is not None:
-        #     self.user_feat.set_index(self.fuid, inplace=True)
-        #     self.user_feat = self.user_feat.reindex(np.arange(self.num_users))
-        #     self.user_feat.reset_index(inplace=True)
-        #     self._fill_nan(self.user_feat, mapped=True)
-        # else:
-        #     self.user_feat = pd.DataFrame(
-        #         {self.fuid: np.arange(self.num_users)})
-
+        #    self.user_feat = self.user_feat[self.user_feat[self.fuid].isin(keep_users)]
+        #    self.user_feat.reset_index(drop=True, inplace=True)
         # if self.item_feat is not None:
-        #     self.item_feat.set_index(self.fiid, inplace=True)
-        #     self.item_feat = self.item_feat.reindex(np.arange(self.num_items))
-        #     self.item_feat.reset_index(inplace=True)
-        #     self._fill_nan(self.item_feat, mapped=True)
-        # else:
-        #     self.item_feat = pd.DataFrame(
-        #         {self.fiid: np.arange(self.num_items)})
-        # pass
+        #    self.item_feat = self.item_feat[self.item_feat[self.fiid].isin(keep_items)]
+        #    self.item_feat.reset_index(drop=True, inplace=True)
+
+    def _prepare_user_item_feat(self):
+        if self.user_feat is not None:
+            self.user_feat.set_index(self.fuid, inplace=True)
+            self.user_feat = self.user_feat.reindex(np.arange(self.num_users))
+            self.user_feat.reset_index(inplace=True)
+            self._fill_nan(self.user_feat, mapped=True)
+        else:
+            self.user_feat = pd.DataFrame(
+                {self.fuid: np.arange(self.num_users)})
+
+        if self.item_feat is not None:
+            self.item_feat.index = self.item_feat.index + 1 
+            self.item_feat = self.item_feat.reindex(np.arange(len(self.item_feat) + 1))
+            self.item_feat.loc[0, self.fiid] = 0 # this row is for padding
+            self._fill_nan(self.item_feat, mapped=True)
+            
+            item_index_data = {self.fiid : pd.Series(list(range(self.num_items)), dtype=pd.Int64Dtype())}
+            for token in self.field2tokens['locale'][1:]:
+                item_index_data[f'{token}_index'] = pd.Series([0] * self.num_items, dtype=pd.Int64Dtype())
+            self.item_index_feat = pd.DataFrame(item_index_data)
+            
+            logger = logging.getLogger('recstudio')
+            logger.info('start to create item index feat.')
+            # for i in tqdm(range(len(self.item_feat))):
+            #     product = self.item_feat.iloc[i]
+            #     product_id, product_locale_id = product[self.fiid], product['locale']
+            #     if product_id != 0 and product_locale_id != 0:
+            #         product_locale_name = self.field2tokens['locale'][product_locale_id]
+            #         self.item_index_feat.loc[product_id, f'{product_locale_name}_index'] = i
+            for locale_name in tqdm(self.field2tokens['locale'][1:]):
+                locale_products = self.item_feat[self.item_feat['locale'] == self.field2token2idx['locale'][locale_name]]
+                self.item_index_feat.loc[locale_products[self.fiid], f'{locale_name}_index'] = locale_products.index
+                self.field2type[f'{locale_name}_index'] = 'int'
+
+            self.item_all_data = copy.deepcopy(self.item_feat)
+            self.item_feat = self.item_index_feat
+        else:
+            self.item_feat = pd.DataFrame(
+                {self.fiid: np.arange(self.num_items)})
             
     def _get_pos_data(self, index):
         # data_index : [user_id, start, end]
@@ -157,6 +229,7 @@ class KDDCUPDataset(SeqToSeqDataset):
             sep=',',
             feat_cols=test_inter_fields)
         
+        # copy dataset to generate predict dataset 
         test_dataset = copy.copy(self)
         test_dataset.field2tokens['sess_id'] = np.concatenate([['[PAD]'], np.arange(test_inter_feat['sess_id'].astype('int').max() + 1)])
         test_dataset.field2token2idx['sess_id'] = {token : i for i, token in enumerate(test_dataset.field2tokens['sess_id'])}
@@ -196,6 +269,11 @@ class KDDCUPDataset(SeqToSeqDataset):
         test_dataset.user_count = user_count
         
         return test_dataset
+
+    def get_locale_item_set(self, locale_name):
+        item_all_feat_index = self.item_feat.get_col(f'{locale_name}_index')
+        return torch.arange(self.num_items, dtype=torch.int)[item_all_feat_index != 0]
+
     
     def prediction_loader(self, batch_size, shuffle=False, num_workers=0, drop_last=False, ddp=False):
         r"""Return a dataloader for prediction"""

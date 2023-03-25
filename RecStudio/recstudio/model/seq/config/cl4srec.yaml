@@ -1,15 +1,19 @@
 eval:
-  batch_size: 128
-  cutoff: [20, 50, 10, 5]
+  batch_size: 1024
+  predict_topk: 100
+  test_metrics: [recall, precision, map, ndcg, mrr, hit]
+  val_metrics: [mrr, recall, precision, ndcg]
+  cutoff: [100, 20, 50, 10, 5]
 
 model:
   # transformer
+  embed_dim: 128
   activation: 'gelu'
   dropout_rate: 0.5
-  hidden_size: 64
+  hidden_size: 256
   head_num: 2
   layer_norm_eps: 1e-12
-  layer_num: 1
+  layer_num: 2
   # contrastive
   temperature: 1.0
   augment_type: item_crop  # item_crop, item_mask, item_reorder
@@ -17,8 +21,8 @@ model:
   cl_weight: 0.1
 
 train:
-  batch_size: 256
+  batch_size: 512
   early_stop_patience: 40
-  epochs: 1000
+  epochs: 200
   init_method: normal
   negative_count: 1

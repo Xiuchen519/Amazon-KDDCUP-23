@@ -1,5 +1,5 @@
 eval:
-  batch_size: 1024
+  batch_size: 512
   predict_topk: 100
   test_metrics: [recall, precision, map, ndcg, mrr, hit]
   val_metrics: [mrr, recall, precision, ndcg]

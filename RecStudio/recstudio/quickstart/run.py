@@ -2,6 +2,7 @@ import os, time
 from typing import *
 from recstudio.utils import *
 import logging 
+import pandas as pd 
 
 def run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True, **kwargs):
     model_class, model_conf = get_model(model)
@@ -107,23 +108,52 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
 
     data_conf.update(model_conf['data'])    # update model-specified config
 
-    datasets = dataset_class(name=dataset, config=data_conf).build(**model_conf['data'])
+    dataset = dataset_class(name=dataset, config=data_conf)
+    datasets = dataset.build(**model_conf['data'])
     logger.info(f"{datasets[0]}")
     logger.info(f"\n{set_color('Model Config', 'green')}: \n\n" + color_dict_normal(model_conf, False))
     
-    prediction_inter_feat_path = './data_for_recstudio/test_inter_feat.csv'
+    prediction_inter_feat_DE_path = './data_for_recstudio/test_inter_feat_task1_DE.csv'
+    prediction_inter_feat_JP_path = './data_for_recstudio/test_inter_feat_task1_JP.csv'
+    prediction_inter_feat_UK_path = './data_for_recstudio/test_inter_feat_task1_UK.csv'
+    task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
     if do_prediction == False:
         model.fit(*datasets[:2], run_mode='light')
         model.evaluate(datasets[-1])
-        predict_dataset = datasets[0].build_test_dataset(prediction_inter_feat_path)
+
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
-        model.predict(predict_dataset, prediction_path)
+        res_dfs = []
+        for pred_path in task1_prediction_inter_feat_list:
+            predict_dataset = datasets[0].build_test_dataset(pred_path)
+            res_df = model.predict(predict_dataset)
+            res_dfs.append(res_df)
+        res_df = pd.concat(res_dfs, axis=0)
+        res_df = res_df.reset_index(drop=True)
+
+        # save results 
+        if not os.path.exists(os.path.dirname(prediction_path)):
+            os.makedirs(os.path.dirname(prediction_path))
+        res_df.to_parquet(prediction_path, engine='pyarrow')
+        model.logger.info(f'Prediction is finished, results are saved in {prediction_path}.')
+
+        # predict_dataset = datasets[0].build_test_dataset(prediction_inter_feat_path)
+        # model.predict(predict_dataset, prediction_path)
     else:
-        predict_dataset = datasets[0].build_test_dataset(prediction_inter_feat_path)
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         # init model 
         model.logger = logging.getLogger('recstudio')
         model._init_model(datasets[0])
-        
-        model.predict(predict_dataset, prediction_path, model_path=model_path)
 
+        res_dfs = []
+        for pred_path in task1_prediction_inter_feat_list:
+            predict_dataset = datasets[0].build_test_dataset(pred_path)
+            res_df = model.predict(predict_dataset, model_path=model_path)
+            res_dfs.append(res_df)
+        res_df = pd.concat(res_dfs, axis=0)
+        res_df = res_df.reset_index(drop=True)
+
+        # save results 
+        if not os.path.exists(os.path.dirname(prediction_path)):
+            os.makedirs(os.path.dirname(prediction_path))
+        res_df.to_parquet(prediction_path, engine='pyarrow')
+        model.logger.info(f'Prediction is finished, results are saved in {prediction_path}.')

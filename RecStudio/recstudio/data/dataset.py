@@ -393,7 +393,8 @@ class TripletDataset(Dataset):
     def _prepare_user_item_feat(self):
         if self.user_feat is not None:
             self.user_feat.set_index(self.fuid, inplace=True)
-            self.user_feat = self.user_feat.reindex(np.arange(self.num_users))
+            # the type of series should be Int64Dtype, not int64, or int64 will become float since padding is NaN.
+            self.user_feat = self.user_feat.reindex(np.arange(self.num_users)) 
             self.user_feat.reset_index(inplace=True)
             self._fill_nan(self.user_feat, mapped=True)
         else:
@@ -1456,7 +1457,7 @@ class TensorFrame(Dataset):
                 seq_data = [torch.from_numpy(
                     d[:dataset.field2maxlen[field]]) for d in value]
                 data[field] = pad_sequence(seq_data, batch_first=True)
-            elif ftype == 'token':
+            elif ftype == 'token' or ftype == 'int':
                 data[field] = torch.from_numpy(
                     dataframe[field].to_numpy(np.int64))
             else:

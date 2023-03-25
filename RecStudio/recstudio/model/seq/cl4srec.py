@@ -1,5 +1,5 @@
 import torch
-from recstudio.data import dataset
+from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import data_augmentation
 from .sasrec import SASRec, SASRecQueryEncoder
 
@@ -28,7 +28,10 @@ class CL4SRec(SASRec):
         self.augmentation_model = data_augmentation.CL4SRecAugmentation(self.config['model'], train_data)
 
     def _get_dataset_class():
-        return dataset.SeqToSeqDataset
+        return advance_dataset.KDDCUPDataset
+
+    def _set_data_field(self, data):
+        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
 
     def _get_item_encoder(self, train_data):
         return torch.nn.Embedding(train_data.num_items + 1, self.embed_dim, padding_idx=0) # the last item is mask
@@ -51,4 +54,7 @@ class CL4SRec(SASRec):
         loss_value = self.loss_fn(batch[self.frating], **output['score']) + \
             self.config['model']['cl_weight'] * cl_output['cl_loss']
         return loss_value
+    
+    def _get_item_vector(self):
+        return self.item_encoder.weight[1:-1]
 

@@ -221,7 +221,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             self.logger.info(color_dict(output, self.run_mode == 'tune'))
         return output
 
-    def predict(self, predict_data, result_path, verbose=True, model_path=None, **kwargs) -> Dict:
+    def predict(self, predict_data, verbose=True, model_path=None, **kwargs) -> Dict:
         r""" Predict for predict data.
 
         Args:
@@ -234,20 +234,17 @@ class Recommender(torch.nn.Module, abc.ABC):
         """
 
         predict_data.drop_feat(self.fields)
-        test_loader = predict_data.prediction_loader(batch_size=self.config['eval']['batch_size'])
-        output = {}
+        test_loader = predict_data.prediction_loader(batch_size=self.config['eval']['batch_size'])      
         if model_path is None:
             self.load_checkpoint(os.path.join(self.config['eval']['save_path'], self.ckpt_path))
         else:
             self.load_checkpoint(model_path)
         if 'config' in kwargs:
             self.config.update(kwargs['config'])
-        self.config['eval']['predict_topk'] = 100
+        # self.config['eval']['predict_topk'] = 100
         self.eval()
-        res_df = self.predict_epoch(test_loader, predict_data, result_path)
-        if verbose:
-            self.logger.info(f'Prediction is finished, results are saved in {result_path}.')
-        return output
+        res_df = self.predict_epoch(test_loader, predict_data)
+        return res_df
 
     # def predict(self, batch, k, *args, **kwargs):
     #     pass
@@ -701,7 +698,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         return output_list
 
     @torch.no_grad()
-    def predict_epoch(self, dataloader, dataset, result_path):
+    def predict_epoch(self, dataloader, dataset):
         if hasattr(self, '_update_item_vector'):
             self._update_item_vector()
 
@@ -717,11 +714,6 @@ class Recommender(torch.nn.Module, abc.ABC):
             res_df = pd.concat([res_df, prediction_df], axis=0)
 
         res_df = res_df.reset_index(drop=True)
-        
-        # save results 
-        if not os.path.exists(os.path.dirname(result_path)):
-            os.makedirs(os.path.dirname(result_path))
-        res_df.to_parquet(result_path, engine='pyarrow')
     
         return res_df
     
@@ -807,6 +799,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         self.config = ckpt['config']
         # the _update_item_vector should be called, otherwise loading state_dict will
         # raise key unmapped error.
-        if hasattr(self, '_update_item_vector') and (not hasattr(self,'item_vector')):
+        if ( hasattr(self, '_update_item_vector') and (not hasattr(self,'item_vector')) ) or \
+        (self.item_vector.shape != ckpt['parameters']['item_vector'].shape) :
             self._update_item_vector()
         self.load_state_dict(ckpt['parameters'])
