@@ -1,4 +1,4 @@
-url: http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/ratings_Beauty.csv
+url: https://rec.ustc.edu.cn/share/93945100-c929-11ed-b02a-e350c7546ee3
 user_id_field: &u user_id:token # TODO: comments for &u and *u
 item_id_field: &i item_id:token
 rating_field: &r rating:float

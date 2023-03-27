@@ -8,6 +8,7 @@ eval:
   test_metrics: [recall, precision, map, ndcg, mrr, hit]
   val_metrics: [mrr, recall, precision, ndcg]
   cutoff: [100, 20, 50, 10, 5]
+  
 
 model:
   # transformer
@@ -21,7 +22,7 @@ model:
 
 train:
   batch_size: 512
-  early_stop_patience: 20
+  early_stop_patience: 40
   epochs: 200
   init_method: normal
   negative_count: 1

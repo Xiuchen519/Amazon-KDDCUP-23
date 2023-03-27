@@ -14,14 +14,15 @@ user_feat_name: ~
 user_feat_field: ~
 user_feat_header: ~
 
-item_feat_name: [debug_products_train.csv]
-item_feat_field: [[*i, locale:token, title:str, price:float, brand:str, color:str, size:str, model:token, material:str, author:str, desc:str]]
+item_feat_name: [debug_id_products_train.csv]
+item_feat_field: [[*i, locale:token]]
+# item_feat_field: [[*i, locale:token, title:str, price:float, brand:str, color:str, size:str, model:token, material:str, author:str, desc:str]]
 item_feat_header: 0
 
 use_fields: ~
 field_separator: ","
 seq_separator: " "
-min_user_inter: 0
+min_user_inter: 4
 min_item_inter: 0
 field_max_len: ~
 low_rating_threshold: ~

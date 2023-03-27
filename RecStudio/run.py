@@ -15,3 +15,5 @@ if __name__ == '__main__':
 
     quickstart.kdd_cup_run(args.model, args.dataset, model_config=model_conf, data_config_path=args.data_config_path, 
                            do_prediction=args.do_prediction, model_path=args.model_path)
+    
+    # quickstart.run(args.model, args.dataset, model_config=model_conf, data_config_path=args.data_config_path)

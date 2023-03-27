@@ -1,21 +1,9 @@
 import torch
+from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
-from .sasrec import SASRec
+from recstudio.model.module import functional as recfn
 from recstudio.model import basemodel, loss_func, module, scorer
-r"""
-SASRec autoregressive
-#############
-"""
 
-class KDDCUP_item_encoder(torch.nn.Module):
-
-    def __init__(self, fiid, embed_dim, train_data) -> None:
-        super().__init__()
-        self.fiid = fiid 
-        self.item_emb = torch.nn.Embedding(train_data.num_items, embed_dim, padding_idx=0)
-
-    def forward(self, batch):
-        return self.item_emb(batch[self.fiid])
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
@@ -51,7 +39,7 @@ class SASRecQueryEncoder(torch.nn.Module):
         positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
         positions = positions.unsqueeze(0).expand_as(user_hist)
         position_embs = self.position_emb(positions)
-        seq_embs = self.item_encoder.item_emb(user_hist)
+        seq_embs = self.item_encoder(user_hist)
 
         mask4padding = user_hist == 0  # BxL
         L = user_hist.size(-1)
@@ -78,8 +66,11 @@ class SASRecQueryEncoder(torch.nn.Module):
         else:
             return transformer_out
 
-class SASRec2(SASRec):
+
+class SASRec_Next(basemodel.BaseRetriever):
     r"""
+    SASRec models user's sequence with a Transformer.
+
     Model hyper parameters:
         - ``embed_dim(int)``: The dimension of embedding layers. Default: ``64``.
         - ``hidden_size(int)``: The output size of Transformer layer. Default: ``128``.
@@ -91,14 +82,22 @@ class SASRec2(SASRec):
         - ``layer_norm_eps``: The layer norm epsilon in transformer. Default: ``1e-12``.
     """
 
+    # def add_model_specific_args(parent_parser):
+    #     parent_parser = basemodel.Recommender.add_model_specific_args(parent_parser)
+    #     parent_parser.add_argument_group('SASRec')
+    #     parent_parser.add_argument("--hidden_size", type=int, default=128, help='hidden size of feedforward')
+    #     parent_parser.add_argument("--layer_num", type=int, default=2, help='layer num of transformers')
+    #     parent_parser.add_argument("--head_num", type=int, default=2, help='head num of multi-head attention')
+    #     parent_parser.add_argument("--dropout_rate", type=float, default=0.5, help='dropout rate')
+    #     parent_parser.add_argument("--negative_count", type=int, default=1, help='negative sampling numbers')
+    #     return parent_parser
+
     def _get_dataset_class():
-        return advance_dataset.KDDCUPDataset
-
+        r"""SeqDataset is used for SASRec."""
+        return advance_dataset.KDDCUPSliceDataset
+    
     def _set_data_field(self, data):
-        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale', 'DE_index', 'JP_index', 'UK_index', 'ES_index', 'IT_index', 'FR_index'])
-
-    def _get_item_encoder(self, train_data):
-        return KDDCUP_item_encoder(self.fiid, self.embed_dim, train_data)
+        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
 
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
@@ -108,20 +107,20 @@ class SASRec2(SASRec):
             hidden_size=model_config['hidden_size'], dropout=model_config['dropout_rate'],
             activation=model_config['activation'], layer_norm_eps=model_config['layer_norm_eps'],
             n_layer=model_config['layer_num'],
-            training_pooling_type='origin',
             item_encoder=self.item_encoder
         )
-    
-    def _get_item_vector(self):
-        return self.item_encoder.item_emb.weight[1:]
 
-    def _get_item_feat(self, data):
-        if isinstance(data, dict):
-            return {self.fiid : data[self.fiid]}
-        else: # neg_item_idx
-            return {self.fiid: data}
+    def _get_item_encoder(self, train_data):
+        return torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
 
-    
-    
+    def _get_score_func(self):
+        r"""InnerProduct is used as the score function."""
+        return scorer.InnerProductScorer()
 
+    def _get_loss_func(self):
+        r"""Binary Cross Entropy is used as the loss function."""
+        return loss_func.BinaryCrossEntropyLoss()
 
+    def _get_sampler(self, train_data):
+        r"""Uniform sampler is used as negative sampler."""
+        return sampler.UniformSampler(train_data.num_items)

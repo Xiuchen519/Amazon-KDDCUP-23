@@ -1307,7 +1307,10 @@ class SeqDataset(TripletDataset):
 
     @property
     def inter_feat_subset(self):
-        return self.data_index[:, -1]
+        start = self.data_index[:, -2] 
+        all_items = self.data_index[:, -1]
+        return torch.unique(torch.cat([start, all_items], dim=0))
+        # return self.data_index[:, -1] # maybe the first item is lost.
 
 
 class FullSeqDataset(SeqDataset):
@@ -1353,7 +1356,7 @@ class SeqToSeqDataset(SeqDataset):
 
     def _get_pos_data(self, index):
         # data_index : [user_id, start, end]
-        # user interval [start, end) both including. 
+        # user interval [start, end] both including. 
         # training:
         # source: interval [idx[:, 1], idx[:, 2] - 1]
         # target: interval [idx[:, 1] + 1, idx[:, 2]]
@@ -1416,6 +1419,132 @@ class SeqToSeqDataset(SeqDataset):
                             persistent_workers=False)
         return output
 
+
+class SessionDataset(SeqToSeqDataset):
+    r"""Dataset for session-based recommendation."""
+
+    def _get_data_idx(self, splits):
+        # split: [start, train_end, valid_end, test_end]
+        splits, uids = splits 
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0] - 1).max()
+
+        def get_slice(sps, uids, sp_idx):
+            data = [
+                np.array([uids[i], max(sp[sp_idx - 1], sp[sp_idx] - 1 - maxlen), sp[sp_idx] - 1]) \
+                    for i, sp in enumerate(sps) if sp[sp_idx] > sp[sp_idx - 1]
+            ]
+            return data
+
+        output = [get_slice(splits, uids, i) for i in range(1, splits.shape[-1])]
+        output = [torch.from_numpy(np.vstack(_)) for _ in output]
+        return output
+
+
+    def get_session_hist(self, isUser=True):
+        r"""Get session history, exclude the last item.
+
+
+        Args:
+            isUser(bool, optional): Default: ``True``.
+
+        Returns:
+            torch.Tensor: padded user or item hisoty.
+
+            torch.Tensor: length of the history sequence.
+        """
+        start = self.data_index[:, 1]
+        end = self.data_index[:, 2] - 1
+        session_inter_feat_subset = torch.cat([torch.arange(s, e + 1, dtype=s.dtype) for s, e in zip(start, end)], dim=0)
+        
+        user_array = self.inter_feat.get_col(self.fuid)[session_inter_feat_subset]
+        item_array = self.inter_feat.get_col(self.fiid)[session_inter_feat_subset]
+        sorted, index = torch.sort(user_array if isUser else item_array)
+        user_item, count = torch.unique_consecutive(sorted, return_counts=True)
+        list_ = torch.split(
+            item_array[index] if isUser else user_array[index], tuple(count.numpy()))
+        tensors = [torch.tensor([], dtype=torch.int64) for _ in range(
+            self.num_users if isUser else self.num_items)]
+        for i, l in zip(user_item, list_):
+            tensors[i] = l
+        user_count = torch.tensor([len(e) for e in tensors])
+        tensors = pad_sequence(tensors, batch_first=True)
+        return tensors, user_count
+    
+
+    def _build(self, ratio_or_num, shuffle, split_mode, rep, binarized_rating_thres=None):
+        datasets = super()._build(ratio_or_num, shuffle, split_mode, rep, binarized_rating_thres)
+        for dataset in datasets[1:]:
+            dataset.user_hist, dataset.user_count = dataset.get_session_hist(True)
+        return datasets 
+
+
+class SessionSliceDataset(SeqDataset):
+    r"""Dataset for session-based recommendation, long session is cut into slices."""
+
+    def _get_data_idx(self, splits):
+        # split: [start, train_end, valid_end, test_end]
+        splits, uids = splits 
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0] - 1).max()
+
+        def get_slice(sps, uids, sp_idx):
+            data = []
+            if sp_idx == 1: # train
+                for i, sp in enumerate(sps):
+                    if sp[sp_idx] > sp[sp_idx - 1]:
+                        for slice_end in range(sp[sp_idx - 1], sp[sp_idx]):
+                            slice_start = max(sp[0], slice_end - maxlen)
+                            if slice_start != slice_end:
+                                data.append(np.array([uids[i], slice_start, slice_end]))
+                return np.array(data)
+            else:
+                for i, sp in enumerate(sps): # val or test 
+                    if sp[sp_idx] > sp[sp_idx - 1]:
+                        slice_end = sp[sp_idx] - 1
+                        slice_start = max(sp[sp_idx - 1], sp[sp_idx] - 1 - maxlen)
+                        data.append(np.array([uids[i], slice_start, slice_end]))
+                return np.array(data)
+
+        output = [get_slice(splits, uids, i) for i in range(1, splits.shape[-1])]
+        output = [torch.from_numpy(_) for _ in output]
+        return output
+
+
+    def get_eval_session_hist(self, isUser=True):
+        r"""Get session history, exclude the last item.
+
+
+        Args:
+            isUser(bool, optional): Default: ``True``.
+
+        Returns:
+            torch.Tensor: padded user or item hisoty.
+
+            torch.Tensor: length of the history sequence.
+        """
+        start = self.data_index[:, 1]
+        end = self.data_index[:, 2] - 1
+        session_inter_feat_subset = torch.cat([torch.arange(s, e + 1, dtype=s.dtype) for s, e in zip(start, end)], dim=0)
+        
+        user_array = self.inter_feat.get_col(self.fuid)[session_inter_feat_subset]
+        item_array = self.inter_feat.get_col(self.fiid)[session_inter_feat_subset]
+        sorted, index = torch.sort(user_array if isUser else item_array)
+        user_item, count = torch.unique_consecutive(sorted, return_counts=True)
+        list_ = torch.split(
+            item_array[index] if isUser else user_array[index], tuple(count.numpy()))
+        tensors = [torch.tensor([], dtype=torch.int64) for _ in range(
+            self.num_users if isUser else self.num_items)]
+        for i, l in zip(user_item, list_):
+            tensors[i] = l
+        user_count = torch.tensor([len(e) for e in tensors])
+        tensors = pad_sequence(tensors, batch_first=True)
+        return tensors, user_count
+    
+
+    def _build(self, ratio_or_num, shuffle, split_mode, rep, binarized_rating_thres=None):
+        datasets = super()._build(ratio_or_num, shuffle, split_mode, rep, binarized_rating_thres)
+        for dataset in datasets[1:]:
+            dataset.user_hist, dataset.user_count = dataset.get_eval_session_hist(True)
+        return datasets 
 
 class TensorFrame(Dataset):
     r"""The main data structure used to save interaction data in RecStudio dataset.

@@ -142,3 +142,4 @@ datasets/*
 .recstudio/
 /data_for_recstudio/*.csv
 /predictions
+*.parquet
