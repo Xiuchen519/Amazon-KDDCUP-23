@@ -1,2 +1,16 @@
+data:
+  split_mode: user
+  split_ratio: [0.9, 0.05, 0.05]
+
+eval:
+  batch_size: 512
+  predict_topk: 100
+  test_metrics: [recall, precision, map, ndcg, mrr, hit]
+  val_metrics: [mrr, recall, precision, ndcg]
+  cutoff: [100, 20, 50, 10, 5]
+
 train:
+  batch_size: 512
+  early_stop_patience: 10
+  epochs: 200
   negative_count: 1

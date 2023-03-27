@@ -1,6 +1,6 @@
 import torch
 from recstudio.ann import sampler
-from recstudio.data import dataset
+from recstudio.data import dataset, advance_dataset
 from recstudio.model import basemodel, loss_func, module, scorer
 
 r"""
@@ -22,7 +22,10 @@ class FPMC(basemodel.BaseRetriever):
 
     def _get_dataset_class():
         r"""The dataset FPMC used is SeqDataset."""
-        return dataset.SeqDataset
+        return advance_dataset.KDDCUPSeqDataset
+    
+    def _set_data_field(self, data):
+        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
 
     def _get_item_encoder(self, train_data):
         return torch.nn.Embedding(train_data.num_items, 2*self.embed_dim, padding_idx=0)

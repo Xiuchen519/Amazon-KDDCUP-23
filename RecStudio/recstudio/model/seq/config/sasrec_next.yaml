@@ -18,9 +18,10 @@ model:
   head_num: 2
   layer_norm_eps: 1e-12
   layer_num: 1
+  softmax_loss: True
 
 train:
-  batch_size: 1024
+  batch_size: 512
   early_stop_patience: 10
   epochs: 100
   init_method: normal

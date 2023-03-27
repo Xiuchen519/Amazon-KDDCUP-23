@@ -94,7 +94,7 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _get_dataset_class():
         r"""SeqDataset is used for SASRec."""
-        return advance_dataset.KDDCUPSliceDataset
+        return advance_dataset.KDDCUPSeqDataset
     
     def _set_data_field(self, data):
         data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
@@ -119,8 +119,18 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _get_loss_func(self):
         r"""Binary Cross Entropy is used as the loss function."""
-        return loss_func.BinaryCrossEntropyLoss()
+        if self.config['model']['softmax_loss'] == True:
+            return loss_func.SoftmaxLoss()
+        else:
+            return loss_func.BinaryCrossEntropyLoss()
 
     def _get_sampler(self, train_data):
         r"""Uniform sampler is used as negative sampler."""
-        return sampler.UniformSampler(train_data.num_items)
+        if self.config['model']['softmax_loss'] == True:
+            return None
+        else:
+            return sampler.UniformSampler(train_data.num_items) 
+
+    # def _get_sampler(self, train_data):
+    #     r"""Uniform sampler is used as negative sampler."""
+    #     return None

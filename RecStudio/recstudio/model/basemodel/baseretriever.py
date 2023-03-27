@@ -452,7 +452,7 @@ class BaseRetriever(Recommender):
         score, topk_items = self.topk(batch, topk, batch['user_hist'])
         topk_item_tokens = []
         for topk_items_u in topk_items:
-            tokens = [dataset.field2tokens[self.fiid][item_id] for item_id in topk_items_u]
+            tokens = dataset.field2tokens[self.fiid][topk_items_u.cpu()].tolist()
             topk_item_tokens.append(tokens)
 
         

@@ -91,7 +91,7 @@ class ALSDataset(TripletDataset):
 # class SessionDataset(SeqDataset):
 #     r"""Dataset for session-based recommendation."""
 
-class KDDCUPSliceDataset(SessionSliceDataset):
+class KDDCUPSeqDataset(SessionSliceDataset):
 
     def _filter(self, min_user_inter, min_item_inter):
         self._filter_ratings(self.config.get('low_rating_thres', None))
@@ -140,6 +140,31 @@ class KDDCUPSliceDataset(SessionSliceDataset):
         # if self.item_feat is not None:
         #    self.item_feat = self.item_feat[self.item_feat[self.fiid].isin(keep_items)]
         #    self.item_feat.reset_index(drop=True, inplace=True)
+
+    def _get_pos_data(self, index):
+
+        if getattr(self, 'predict_mode', False):
+            idx = self.data_index[index]
+            data = {self.fuid: idx[:, 0]}
+            data.update(self.user_feat[data[self.fuid]])
+            start = idx[:, 1]
+            end = idx[:, 2]
+            lens = end - start + 1
+            data['seqlen'] = lens
+            l_source = torch.cat([torch.arange(s, e + 1) for s, e in zip(start, end)]) # should include the last item.
+            # source_data
+            source_data = self.inter_feat[l_source]
+            for k in source_data:
+                source_data[k] = pad_sequence(source_data[k].split(
+                    tuple(lens.numpy())), batch_first=True)
+            source_data.update(self.item_feat[source_data[self.fiid]])
+            
+            for k, v in source_data.items():
+                if k != self.fuid:
+                    data['in_' + k] = v
+            return data
+        else:
+            return super()._get_pos_data(index)
 
     def _prepare_user_item_feat(self):
         if self.user_feat is not None:
@@ -190,7 +215,7 @@ class KDDCUPSliceDataset(SessionSliceDataset):
             for i, sp in enumerate(sps): # predict  
                 if sp[1] > sp[0]:
                     slice_end = sp[1] - 1
-                    slice_start = max(sp[0], sp[1] - 1 - maxlen)
+                    slice_start = max(sp[0], sp[1] - maxlen)
                     data.append(np.array([uids[i], slice_start, slice_end]))
             return np.array(data)
 
@@ -258,6 +283,8 @@ class KDDCUPSliceDataset(SessionSliceDataset):
         self.eval_mode = True 
         self.predict_mode = True # set mode to prediction.
         return self.loader(batch_size, shuffle, num_workers, drop_last, ddp)
+
+    
 
 
 class KDDCUPDataset(SessionDataset):
@@ -353,7 +380,7 @@ class KDDCUPDataset(SessionDataset):
             
     def _get_pos_data(self, index):
         # data_index : [user_id, start, end]
-        # user interval [start, end) both including. 
+        # user interval [start, end] both including. 
         # training:
         # source: interval [idx[:, 1], idx[:, 2] - 1]
         # target: interval [idx[:, 1] + 1, idx[:, 2]]
@@ -367,9 +394,9 @@ class KDDCUPDataset(SessionDataset):
             data.update(self.user_feat[data[self.fuid]])
             start = idx[:, 1]
             end = idx[:, 2]
-            lens = end - start
+            lens = end - start + 1
             data['seqlen'] = lens
-            l_source = torch.cat([torch.arange(s, e) for s, e in zip(start, end)])
+            l_source = torch.cat([torch.arange(s, e + 1) for s, e in zip(start, end)]) # to include the last item.
             # source_data
             source_data = self.inter_feat[l_source]
             for k in source_data:
@@ -383,6 +410,24 @@ class KDDCUPDataset(SessionDataset):
             return data
         else:
             return super()._get_pos_data(index)
+
+
+    def _get_predict_data_idx(self, splits):
+        splits, uids = splits
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0] - 1).max()
+
+        def get_slice(sps, uids):
+            data = []
+            for i, sp in enumerate(sps): # predict  
+                if sp[1] > sp[0]:
+                    slice_end = sp[1] - 1
+                    slice_start = max(sp[0], sp[1] - maxlen)
+                    data.append(np.array([uids[i], slice_start, slice_end]))
+            return np.array(data)
+
+        output = [get_slice(splits, uids)]
+        output = [torch.from_numpy(_) for _ in output]
+        return output
 
 
     # load prediction dataset 
@@ -430,7 +475,7 @@ class KDDCUPDataset(SessionDataset):
         test_dataset.user_feat = TensorFrame.fromPandasDF(test_dataset.user_feat, self)
         test_dataset.inter_feat = test_inter_feat
         
-        test_dataset.data_index = self._get_data_idx((splits, uids))[0]
+        test_dataset.data_index = self._get_predict_data_idx((splits, uids))[0]
         user_hist, user_count = test_dataset.get_hist(True)
         test_dataset.user_hist = user_hist
         test_dataset.user_count = user_count
