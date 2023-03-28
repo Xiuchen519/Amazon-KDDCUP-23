@@ -45,6 +45,11 @@ class TripletDataset(Dataset):
                 raise TypeError("expecting `config` to be Dict or string,"
                                 f"while get {type(config)} instead.")
 
+        if 'split_mode' in self.config:
+                del self.config['split_mode']
+        if 'split_ratio' in self.config: 
+            del self.config['split_ratio']
+
         cache_flag, data_dir = check_valid_dataset(self.name, self.config)
         if cache_flag:
             self.logger.info("Load dataset from cache.")

@@ -119,7 +119,7 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
     task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
     if do_prediction == False:
         model.fit(*datasets[:2], run_mode='light')
-        model.evaluate(datasets[-1])
+        # model.evaluate(datasets[-1])
 
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         res_dfs = []
