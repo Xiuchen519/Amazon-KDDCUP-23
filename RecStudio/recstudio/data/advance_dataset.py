@@ -208,7 +208,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
 
     def _get_predict_data_idx(self, splits):
         splits, uids = splits
-        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0] - 1).max()
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0]).max()
 
         def get_slice(sps, uids):
             data = []
@@ -222,6 +222,36 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         output = [get_slice(splits, uids)]
         output = [torch.from_numpy(_) for _ in output]
         return output
+
+    def get_all_session_hist(self, isUser=True):
+        r"""Get session history, exclude the last item.
+
+
+        Args:
+            isUser(bool, optional): Default: ``True``.
+
+        Returns:
+            torch.Tensor: padded user or item hisoty.
+
+            torch.Tensor: length of the history sequence.
+        """
+        start = self.data_index[:, 1] # (user, [start, end])
+        end = self.data_index[:, 2] # the last item is included in the history
+        session_inter_feat_subset = torch.cat([torch.arange(s, e + 1, dtype=s.dtype) for s, e in zip(start, end)], dim=0)
+        
+        user_array = self.inter_feat.get_col(self.fuid)[session_inter_feat_subset]
+        item_array = self.inter_feat.get_col(self.fiid)[session_inter_feat_subset]
+        sorted, index = torch.sort(user_array if isUser else item_array)
+        user_item, count = torch.unique_consecutive(sorted, return_counts=True)
+        list_ = torch.split(
+            item_array[index] if isUser else user_array[index], tuple(count.numpy()))
+        tensors = [torch.tensor([], dtype=torch.int64) for _ in range(
+            self.num_users if isUser else self.num_items)]
+        for i, l in zip(user_item, list_):
+            tensors[i] = l
+        user_count = torch.tensor([len(e) for e in tensors])
+        tensors = pad_sequence(tensors, batch_first=True)
+        return tensors, user_count
 
     # load prediction dataset
     def build_test_dataset(self, test_data_path:str):
@@ -268,7 +298,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         test_dataset.inter_feat = test_inter_feat
         
         test_dataset.data_index = self._get_predict_data_idx((splits, uids))[0]
-        user_hist, user_count = test_dataset.get_hist(True)
+        user_hist, user_count = test_dataset.get_all_session_hist(True)
         test_dataset.user_hist = user_hist
         test_dataset.user_count = user_count
         

@@ -1440,7 +1440,7 @@ class SessionDataset(SeqToSeqDataset):
         return output
 
 
-    def get_session_hist(self, isUser=True):
+    def get_eval_session_hist(self, isUser=True):
         r"""Get session history, exclude the last item.
 
 
@@ -1452,8 +1452,8 @@ class SessionDataset(SeqToSeqDataset):
 
             torch.Tensor: length of the history sequence.
         """
-        start = self.data_index[:, 1]
-        end = self.data_index[:, 2] - 1
+        start = self.data_index[:, 1] # [user, start, end] include both 
+        end = self.data_index[:, 2] - 1 # exclude the last item 
         session_inter_feat_subset = torch.cat([torch.arange(s, e + 1, dtype=s.dtype) for s, e in zip(start, end)], dim=0)
         
         user_array = self.inter_feat.get_col(self.fuid)[session_inter_feat_subset]
@@ -1474,7 +1474,7 @@ class SessionDataset(SeqToSeqDataset):
     def _build(self, ratio_or_num, shuffle, split_mode, rep, binarized_rating_thres=None):
         datasets = super()._build(ratio_or_num, shuffle, split_mode, rep, binarized_rating_thres)
         for dataset in datasets[1:]:
-            dataset.user_hist, dataset.user_count = dataset.get_session_hist(True)
+            dataset.user_hist, dataset.user_count = dataset.get_eval_session_hist(True)
         return datasets 
 
 
@@ -1545,6 +1545,20 @@ class SessionSliceDataset(SeqDataset):
         for dataset in datasets[1:]:
             dataset.user_hist, dataset.user_count = dataset.get_eval_session_hist(True)
         return datasets 
+
+
+    def loader(self, batch_size, shuffle=True, num_workers=1, drop_last=False, ddp=False):
+        # if not ddp:
+        # Don't use SortedSampler here, it may hurt the performence of the model.
+        sampler = DataSampler(self, batch_size, shuffle, drop_last)
+        if ddp:
+            sampler = DistributedSamplerWrapper(sampler, shuffle=False)
+
+        output = DataLoader(self, sampler=sampler, batch_size=None,
+                            shuffle=False, num_workers=num_workers,
+                            persistent_workers=False)
+        return output
+
 
 class TensorFrame(Dataset):
     r"""The main data structure used to save interaction data in RecStudio dataset.
