@@ -9,6 +9,10 @@ from tqdm import tqdm
 import logging 
 import warnings
 import scipy.sparse as ssp
+from recstudio.utils import *
+from typing import *
+import pickle
+
 
 
 
@@ -92,6 +96,54 @@ class ALSDataset(TripletDataset):
 #     r"""Dataset for session-based recommendation."""
 
 class KDDCUPSeqDataset(SessionSliceDataset):
+
+    @classmethod
+    def build_datasets(cls, name: str = 'ml-100k', specific_config: Union[Dict, str] = None):
+
+        def _load_cache(path):
+            with open(path, 'rb') as f:
+                download_obj = pickle.load(f)
+            return download_obj
+
+        def _save_cache(sub_datasets, md: str):
+            cache_dir = os.path.join(DEFAULT_CACHE_DIR, "cache")
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+            with open(os.path.join(cache_dir, md), 'wb') as f:
+                pickle.dump(sub_datasets, f)
+
+        logger = logging.getLogger('recstudio')
+
+        config = get_dataset_default_config(name)
+        if specific_config is not None:
+            if isinstance(specific_config, str):
+                config.update(parser_yaml(specific_config))
+            elif isinstance(specific_config, Dict):
+                config.update(specific_config)
+            else:
+                raise TypeError("expecting `config` to be Dict or string,"
+                                f"while get {type(specific_config)} instead.")
+
+        cache_flag, data_dir = check_valid_dataset(name, config)
+        if cache_flag:
+            logger.info("Load dataset from cache.")
+            cache_datasets = _load_cache(data_dir)
+            datasets = []
+            for i in range(len(cache_datasets)):
+                datasets.append(cls(name, data_dir, config, True))
+                for k in cache_datasets[i].__dict__:
+                    attr = getattr(cache_datasets[i], k)
+                    setattr(datasets[i], k, attr)
+            return datasets 
+        else:
+            dataset = cls(name, data_dir, config)
+            # load train and valid dataset separately
+            train_dataset = dataset.build(**config)[0] # split ratio : [1.0]
+            valid_dataset = dataset.build_valid_dataset(data_dir, config['field_separator'])
+            if config['save_cache'] == True:
+                _save_cache([train_dataset, valid_dataset], md5(config))
+            return [train_dataset, valid_dataset]
+        
 
     def _filter(self, min_user_inter, min_item_inter):
         self._filter_ratings(self.config.get('low_rating_thres', None))
@@ -274,7 +326,8 @@ class KDDCUPSeqDataset(SessionSliceDataset):
 
     def dataframe2tensors(self):
         super().dataframe2tensors()
-        self.item_candidates_feat = TensorFrame.fromPandasDF(self.item_candidates_feat, self)
+        if self.config['item_candidates_path'] is not None:
+            self.item_candidates_feat = TensorFrame.fromPandasDF(self.item_candidates_feat, self)
 
     def _get_predict_data_idx(self, splits):
         splits, uids = splits
@@ -294,7 +347,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         return output
 
     def get_all_session_hist(self, isUser=True):
-        r"""Get session history, exclude the last item.
+        r"""Get session history, include the last item.
 
 
         Args:
@@ -373,6 +426,69 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         test_dataset.user_count = user_count
         
         return test_dataset
+
+    # load valid dataset
+    def build_valid_dataset(self, data_dir, field_sep):
+
+        # load valid feat
+        valid_inter_feat_path = os.path.join(
+            data_dir, self.config['valid_inter_feat_name'])
+        valid_inter_feat = super()._load_feat(
+            feat_path=valid_inter_feat_path, 
+            header=self.config['inter_feat_header'], 
+            sep=field_sep,
+            feat_cols=self.config['inter_feat_field'])
+        
+        if self.frating is None:
+            self.frating = 'rating'
+        if self.frating not in valid_inter_feat:
+            # add ratings when implicit feedback
+            self.frating = 'rating'
+            valid_inter_feat.insert(0, self.frating, 1)
+            self.field2type[self.frating] = 'float'
+            self.field2maxlen[self.frating] = 1
+        
+        # copy dataset to generate predict dataset 
+        valid_dataset = copy.copy(self)
+
+        # map ids 
+        # user_feat, sess id as user id
+        valid_dataset.field2tokens['sess_id'] = np.concatenate([['[PAD]'], np.arange(valid_inter_feat['sess_id'].astype('int').max() + 1)])
+        valid_dataset.field2token2idx['sess_id'] = {token : i for i, token in enumerate(valid_dataset.field2tokens['sess_id'])}
+        valid_dataset.user_feat = pd.DataFrame(
+                {self.fuid: np.arange(valid_dataset.num_users)})
+        # inter_feat 
+        for inter_field in self.config['inter_feat_field']:
+            field_name, field_type = inter_field.split(':')[0], inter_field.split(':')[1]
+            if 'float' in field_type:
+                continue
+
+            valid_inter_feat[field_name] = valid_inter_feat[field_name].map(
+                lambda x : valid_dataset.field2token2idx[field_name][x] if x in valid_dataset.field2token2idx[field_name] else valid_dataset.field2token2idx[field_name]['[PAD]']
+                )
+            
+        # get splits and uids 
+        valid_inter_feat.sort_values(by=[self.fuid, self.ftime], inplace=True)
+        user_count = valid_inter_feat[self.fuid].groupby(
+                valid_inter_feat[self.fuid], sort=False).count()
+
+        cumsum = user_count.cumsum()
+        splits = cumsum.to_numpy()
+        splits = np.concatenate([[0], splits])
+        splits = np.array(list(zip(splits[:-1], splits[1:])))
+        uids = user_count.index
+
+        # transform valid_inter_feat to TensorFrame 
+        valid_inter_feat = TensorFrame.fromPandasDF(valid_inter_feat, self)
+        valid_dataset.user_feat = TensorFrame.fromPandasDF(valid_dataset.user_feat, self)
+        valid_dataset.inter_feat = valid_inter_feat
+        
+        valid_dataset.data_index = self._get_predict_data_idx((splits, uids))[0]
+        user_hist, user_count = valid_dataset.get_eval_session_hist(True)
+        valid_dataset.user_hist = user_hist
+        valid_dataset.user_count = user_count
+        
+        return valid_dataset
 
     def get_locale_item_set(self, locale_name):
         item_all_feat_index = self.item_feat.get_col(f'{locale_name}_index')

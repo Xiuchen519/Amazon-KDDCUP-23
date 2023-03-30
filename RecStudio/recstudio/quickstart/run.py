@@ -51,7 +51,7 @@ def run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=Non
 
     data_conf.update(model_conf['data'])    # update model-specified config
 
-    datasets = dataset_class.build_datasets(name=dataset, config=data_conf)
+    datasets = dataset_class.build_datasets(name=dataset, specific_config=data_conf)
 
     logger.info(f"{datasets[0]}")
     logger.info(f"\n{set_color('Model Config', 'green')}: \n\n" + color_dict_normal(model_conf, False))

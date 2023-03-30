@@ -141,5 +141,7 @@ datasets/*
 
 .recstudio/
 /data_for_recstudio/*.csv
+/data_for_recstudio/*.ftr
+/best_ckpt
 /predictions
 *.parquet
