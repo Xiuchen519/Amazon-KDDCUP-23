@@ -1,4 +1,4 @@
-url: ./data_for_recstudio
+url: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio
 user_id_field: &u sess_id:token
 item_id_field: &i product_id:token
 rating_field: ~

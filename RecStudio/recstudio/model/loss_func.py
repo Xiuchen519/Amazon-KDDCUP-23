@@ -145,7 +145,7 @@ class HingeLoss(PairwiseLoss):
 
     def forward(self, label, pos_score, log_pos_prob, neg_score, log_neg_prob):
         loss = torch.maximum(torch.max(neg_score, dim=-1).values - pos_score +
-                             self.margin, torch.tensor([0]).type_as(pos_score))
+                             self.margin, pos_score.new_zeros((1,)))
         if self.n_items is not None:
             impostors = neg_score - pos_score.view(-1, 1) + self.margin > 0
             rank = torch.mean(impostors, -1) * self.n_items
