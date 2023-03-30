@@ -452,11 +452,44 @@ class BaseRetriever(Recommender):
         score, topk_items = self.topk(batch, topk, batch['user_hist'])
         topk_item_tokens = []
         for topk_items_u in topk_items:
-            tokens = [dataset.field2tokens[self.fiid][item_id] for item_id in topk_items_u]
+            tokens = dataset.field2tokens[self.fiid][topk_items_u.cpu()].tolist()
             topk_item_tokens.append(tokens)
 
         
         
+        
+        # turn locale id to locale name 
+        locales_ids = batch['in_' + 'locale']
+        locale_tokens = [dataset.field2tokens['locale'][locale_id[0]] for locale_id in locales_ids]
+
+        prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens})
+
+        return prediction_df
+
+    
+    def candidate_predict_step(self, batch, dataset:advance_dataset.KDDCUPDataset):
+        topk = self.config['eval']['predict_topk']
+
+        # use items in single locale
+        # item_set = dataset.get_locale_item_set(dataset.field2tokens['locale'][batch['in_locale'][0][0]]).to(batch['in_locale'].device)
+        # self.item_vector = self.item_encoder({self.fiid : item_set})
+        
+        # score, topk_items = self.topk(batch, topk, batch['user_hist'])
+        # topk_items = item_set[topk_items - 1]
+
+        # turn id in topk_items to product name 
+        # locale_topk_item_tokens = []
+        # for topk_items_u in topk_items:
+        #     tokens = [dataset.field2tokens[self.fiid][item_id] for item_id in topk_items_u]
+        #     locale_topk_item_tokens.append(tokens)
+
+        # use items in all locales 
+        # self._update_item_vector()
+        score, topk_items = self.candidate_topk(batch, topk, batch['user_hist'])
+        topk_item_tokens = []
+        for topk_items_u in topk_items:
+            tokens = dataset.field2tokens[self.fiid][topk_items_u.cpu()].tolist()
+            topk_item_tokens.append(tokens)
         
         # turn locale id to locale name 
         locales_ids = batch['in_' + 'locale']

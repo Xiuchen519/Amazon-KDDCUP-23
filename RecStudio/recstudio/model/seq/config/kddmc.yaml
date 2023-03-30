@@ -10,7 +10,7 @@ eval:
   cutoff: [100, 20, 50, 10, 5]
 
 train:
-  batch_size: 1024
+  batch_size: 2048
   early_stop_patience: 10
   epochs: 100
   negative_count: 1

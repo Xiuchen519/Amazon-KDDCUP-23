@@ -3,7 +3,7 @@ data:
   split_ratio: [0.8, 0.1, 0.1]
 
 eval:
-  batch_size: 512
+  batch_size: 1024
   predict_topk: 100
   test_metrics: [recall, precision, map, ndcg, mrr, hit]
   val_metrics: [mrr, recall, precision, ndcg]

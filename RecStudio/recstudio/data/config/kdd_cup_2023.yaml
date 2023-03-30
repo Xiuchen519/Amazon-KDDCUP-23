@@ -6,7 +6,7 @@ time_field: &t timestamp:float
 time_format: ~
 
 encoding_method: utf-8
-inter_feat_name: inter_feat.csv
+inter_feat_name: all_task1_inter_feat.csv
 inter_feat_field: [*u, *i, *t, locale:token]
 inter_feat_header: 0
 
@@ -32,5 +32,7 @@ max_seq_len: 10
 network_feat_name: ~ #[[social.txt], [ml-100k.kg, ml-100k.link]]
 mapped_feat_field: [*u, *i]
 network_feat_field: [[[source_id:token, target_id:token]], [[head_id:token, tail_id:token, relation_id:token], [*i, entity_id:token]]]
+
+item_candidates_path: ./data_for_recstudio/item_candidates.ftr
 
 save_cache: True # whether to save processed dataset to cache.

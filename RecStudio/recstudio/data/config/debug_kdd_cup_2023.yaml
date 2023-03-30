@@ -22,15 +22,17 @@ item_feat_header: 0
 use_fields: ~
 field_separator: ","
 seq_separator: " "
-min_user_inter: 4
+min_user_inter: 0
 min_item_inter: 0
 field_max_len: ~
 low_rating_threshold: ~
-max_seq_len: 50
+max_seq_len: 10
 
 # network feature, including social network and knowledge graph, the first two fields are remapped the corresponding features
 network_feat_name: ~ #[[social.txt], [ml-100k.kg, ml-100k.link]]
 mapped_feat_field: [*u, *i]
 network_feat_field: [[[source_id:token, target_id:token]], [[head_id:token, tail_id:token, relation_id:token], [*i, entity_id:token]]]
+
+item_candidates_path: ./data_for_recstudio/debug_item_candidates.ftr
 
 save_cache: False # whether to save processed dataset to cache.

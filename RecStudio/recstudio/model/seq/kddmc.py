@@ -13,7 +13,7 @@ Paper Reference:
 """
 
 
-class FPMC(basemodel.BaseRetriever):
+class KDDMC(basemodel.BaseRetriever):
     r"""
     | FPMC is based on personalized transition graphs over underlying Markov chains. It
       factorizes the transition cube with a pairwise interaction model which is a special case of
@@ -28,28 +28,25 @@ class FPMC(basemodel.BaseRetriever):
         data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
 
     def _get_item_encoder(self, train_data):
-        return torch.nn.Embedding(train_data.num_items, 2*self.embed_dim, padding_idx=0)
+        return torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
 
     def _get_query_encoder(self, train_data):
-        return module.VStackLayer(
-            module.HStackLayer(
-                module.VStackLayer(
-                    module.LambdaLayer(lambda x: x[self.fuid]),
-                    torch.nn.Embedding(train_data.num_users, self.embed_dim, padding_idx=0),
-                ),
-                module.VStackLayer(
-                    module.HStackLayer(
-                        module.VStackLayer(
-                            module.LambdaLayer(lambda x: x['in_'+self.fiid]),
-                            torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0),
-                        ),
-                        module.LambdaLayer(lambda x: x['seqlen'])
-                    ),
-                    module.SeqPoolingLayer(pooling_type='last'),
-                )
-            ),
-            module.LambdaLayer(lambda x: torch.cat(x, dim=-1))
-        )
+
+        class MCQueryEncoder(torch.nn.Module):
+            
+            def __init__(self, train_data, item_encoder) -> None:
+                super().__init__()
+                self.item_encoder = item_encoder
+                self.fiid = train_data.fiid
+            
+            def forward(self, batch):
+                item_seq = batch['in_' + self.fiid]
+                seq_len = batch['seqlen'].unsqueeze(dim=-1) - 1
+                last_item = torch.gather(item_seq, dim=-1, index=seq_len).squeeze()
+                return self.item_encoder(last_item)
+        
+        return MCQueryEncoder(train_data, self.item_encoder)
+
 
     def _get_score_func(self):
         r"""Inner Product is used as the score function."""
