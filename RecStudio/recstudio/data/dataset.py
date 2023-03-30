@@ -22,7 +22,7 @@ class TripletDataset(Dataset):
     The basic dataset class in RecStudio.
     """
 
-    def __init__(self, name: str = 'ml-100k', config: Union[Dict, str] = None):
+    def __init__(self, name, data_dir, config: Union[Dict, str] = None, cache=False):
         r"""Load all data.
 
         Args:
@@ -31,42 +31,68 @@ class TripletDataset(Dataset):
         Returns:
             recstudio.data.dataset.TripletDataset: The ingredients list.
         """
-        self.name = name
+        if cache == False:
+            self.name = name
 
-        self.logger = logging.getLogger('recstudio')
+            self.logger = logging.getLogger('recstudio')
+            self.config = config
 
-        self.config = get_dataset_default_config(name)
-        if config is not None:
-            if isinstance(config, str):
-                self.config.update(parser_yaml(config))
-            elif isinstance(config, Dict):
-                self.config.update(config)
-            else:
-                raise TypeError("expecting `config` to be Dict or string,"
-                                f"while get {type(config)} instead.")
-
-        if 'split_mode' in self.config:
-                del self.config['split_mode']
-        if 'split_ratio' in self.config: 
-            del self.config['split_ratio']
-
-        cache_flag, data_dir = check_valid_dataset(self.name, self.config)
-        if cache_flag:
-            self.logger.info("Load dataset from cache.")
-            self._load_cache(data_dir)
-        else:
             self._init_common_field()
             self._load_all_data(data_dir, self.config['field_separator'])
             # first factorize user id and item id, and then filtering to
             # determine the valid user set and item set
             self._filter(self.config['min_user_inter'],
-                         self.config['min_item_inter'])
+                            self.config['min_item_inter'])
             self._map_all_ids()
             self._post_preprocess()
-            if self.config['save_cache']:
-                self._save_cache(md5(self.config))
+            
+            self._use_field = set([self.fuid, self.fiid, self.frating])
+            
 
-        self._use_field = set([self.fuid, self.fiid, self.frating])
+    @classmethod
+    def build_datasets(cls, name: str = 'ml-100k', specific_config: Union[Dict, str] = None):
+
+        def _load_cache(path):
+            with open(path, 'rb') as f:
+                download_obj = pickle.load(f)
+            return download_obj
+
+        def _save_cache(sub_datasets, md: str):
+            cache_dir = os.path.join(DEFAULT_CACHE_DIR, "cache")
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+            with open(os.path.join(cache_dir, md), 'wb') as f:
+                pickle.dump(sub_datasets, f)
+
+        logger = logging.getLogger('recstudio')
+
+        config = get_dataset_default_config(name)
+        if specific_config is not None:
+            if isinstance(specific_config, str):
+                config.update(parser_yaml(specific_config))
+            elif isinstance(specific_config, Dict):
+                config.update(specific_config)
+            else:
+                raise TypeError("expecting `config` to be Dict or string,"
+                                f"while get {type(specific_config)} instead.")
+
+        cache_flag, data_dir = check_valid_dataset(name, config)
+        if cache_flag:
+            logger.info("Load dataset from cache.")
+            cache_datasets = _load_cache(data_dir)
+            datasets = []
+            for i in range(len(cache_datasets)):
+                datasets.append(cls(name, data_dir, config, True))
+                for k in cache_datasets[i].__dict__:
+                    attr = getattr(cache_datasets[i], k)
+                    setattr(datasets[i], k, attr)
+            return datasets 
+        else:
+            dataset = cls(name, data_dir, config)
+            sub_datasets = dataset.build(**config)
+            if config['save_cache'] == True:
+                _save_cache(sub_datasets, md5(config))
+            return sub_datasets
 
     @property
     def field(self):

@@ -3,7 +3,7 @@ from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import functional as recfn
 from recstudio.model import basemodel, loss_func, module, scorer
-
+from typing import Dict
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
@@ -67,7 +67,7 @@ class SASRecQueryEncoder(torch.nn.Module):
             return transformer_out
 
 
-class SASRec_Next(basemodel.BaseRetriever):
+class SASRec_CAN(basemodel.BaseRetriever):
     r"""
     SASRec models user's sequence with a Transformer.
 
@@ -97,7 +97,10 @@ class SASRec_Next(basemodel.BaseRetriever):
         return advance_dataset.KDDCUPSeqDataset
     
     def _set_data_field(self, data):
-        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
+        if self.config['model']['loss_func'] != 'CanSoftmax':
+            data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
+        else:
+            data.use_field = set([data.fuid, data.fiid, data.frating, 'locale', 'candidates'])
 
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
@@ -119,14 +122,15 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _get_loss_func(self):
         r"""Binary Cross Entropy is used as the loss function."""
-        if self.config['model']['softmax_loss'] == True:
+        if self.config['model']['loss_func'] == 'Softmax' or self.config['model']['loss_func'] == 'CanSoftmax':
             return loss_func.SoftmaxLoss()
-        else:
+        elif self.config['model']['loss_func'] == "BCE":
             return loss_func.BinaryCrossEntropyLoss()
+
 
     def _get_sampler(self, train_data):
         r"""Uniform sampler is used as negative sampler."""
-        if self.config['model']['softmax_loss'] == True:
+        if self.config['model']['loss_func'] in ['Softmax', 'CanSoftmax']:
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
@@ -135,9 +139,33 @@ class SASRec_Next(basemodel.BaseRetriever):
     #     r"""Uniform sampler is used as negative sampler."""
     #     return None
 
-    def candidate_topk(self, batch, k, user_h=None, return_query=False):
+    def forward(self, batch: Dict, full_score: bool = False, return_query: bool = False, return_item: bool = False, return_neg_item: bool = False, return_neg_id: bool = False):
+        if self.config['model']['loss_func'] == 'CanSoftmax':
+            output = {}
+            pos_items = self._get_item_feat(batch)
+            pos_item_vec = self.item_encoder(pos_items)
+
+            query = self.query_encoder(self._get_query_feat(batch))
+            pos_score = self.score_func(query, pos_item_vec) # [B]
+            if batch[self.fiid].dim() > 1:
+                pos_score[batch[self.fiid] == 0] = -float('inf')  # padding
+            output['score'] = {'pos_score': pos_score}
+            
+            item_vectors = self.item_encoder(batch['last_item_candidates']) # [B, 300, 128]
+            all_item_scores = self.score_func(query, item_vectors) # [B, 300]
+            # include self
+            all_item_scores = torch.cat([all_item_scores, pos_score.unsqueeze(dim=-1)], dim=-1)
+            
+            output['score']['all_score'] = all_item_scores 
+            return output
+        else:
+            return super().forward(batch, full_score, return_query, return_item, return_neg_item, return_neg_id)
+
+    def topk(self, batch, k, user_h=None, return_query=False):
         self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]
         score, topk_items = super().topk(batch, k, user_h, return_query) # [B, 150]
         topk_items = topk_items - 1 # [B, topk]
         topk_items = torch.gather(batch['last_item_candidates'], dim=-1, index=topk_items)
         return score, topk_items
+
+

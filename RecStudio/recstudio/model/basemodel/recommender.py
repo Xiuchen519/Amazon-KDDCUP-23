@@ -193,7 +193,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         # mp.spawn(parallel_training, args=(self.world_size,), \
         #     nprocs=self.world_size, join=True)
 
-    def evaluate(self, test_data, verbose=True, **kwargs) -> Dict:
+    def evaluate(self, test_data, verbose=True, model_path=None, **kwargs) -> Dict:
         r""" Predict for test data.
 
         Args:
@@ -208,9 +208,14 @@ class Recommender(torch.nn.Module, abc.ABC):
         test_data.drop_feat(self.fields)
         test_loader = test_data.eval_loader(batch_size=self.config['eval']['batch_size'])
         output = {}
-        self.load_checkpoint(os.path.join(self.config['eval']['save_path'], self.ckpt_path))
+        if model_path is None:
+            self.load_checkpoint(os.path.join(self.config['eval']['save_path'], self.ckpt_path))
+        else:
+            self.load_checkpoint(model_path)
         if 'config' in kwargs:
             self.config.update(kwargs['config'])
+        # self.config['eval']['topk'] = 600
+        # self.config['eval']['cutoff'] = [100, 50, 200, 300, 400, 500]
         self.eval()
         output_list = self.test_epoch(test_loader)
         output.update(self.test_epoch_end(output_list))
@@ -241,7 +246,10 @@ class Recommender(torch.nn.Module, abc.ABC):
             self.load_checkpoint(model_path)
         if 'config' in kwargs:
             self.config.update(kwargs['config'])
+
+        # if you don't use the config in ckpt, reset it here.
         # self.config['eval']['predict_topk'] = 100
+        
         self.eval()
         res_df = self.predict_epoch(test_loader, predict_data)
         return res_df
@@ -709,6 +717,7 @@ class Recommender(torch.nn.Module, abc.ABC):
 
             # model predict results
             prediction_df = self.predict_step(batch, dataset)
+            # prediction_df = self.candidate_predict_step(batch, dataset)
 
             # concat df 
             res_df = pd.concat([res_df, prediction_df], axis=0)
@@ -799,7 +808,10 @@ class Recommender(torch.nn.Module, abc.ABC):
         self.config = ckpt['config']
         # the _update_item_vector should be called, otherwise loading state_dict will
         # raise key unmapped error.
-        if ( hasattr(self, '_update_item_vector') and (not hasattr(self,'item_vector')) ) or \
-        (self.item_vector.shape != ckpt['parameters']['item_vector'].shape) :
-            self._update_item_vector()
+        # if ( hasattr(self, '_update_item_vector') and (not hasattr(self,'item_vector')) ) or \
+        # (self.item_vector.shape != ckpt['parameters']['item_vector'].shape) :
+        #     self._update_item_vector()
+        self._update_item_vector()
+        # if 'item_vector' not in ckpt['parameters']:
+        ckpt['parameters']['item_vector'] = self.item_vector
         self.load_state_dict(ckpt['parameters'])

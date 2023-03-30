@@ -142,12 +142,12 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         #    self.item_feat.reset_index(drop=True, inplace=True)
 
     def _get_pos_data(self, index):
-
+        # [start, end] both included
         if getattr(self, 'predict_mode', False):
-            idx = self.data_index[index]
+            idx = self.data_index[index] # [B, 3]
             data = {self.fuid: idx[:, 0]}
             data.update(self.user_feat[data[self.fuid]])
-            start = idx[:, 1]
+            start = idx[:, 1] # [B]
             end = idx[:, 2]
             lens = end - start + 1
             data['seqlen'] = lens
@@ -159,14 +159,48 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                     tuple(lens.numpy())), batch_first=True)
             source_data.update(self.item_feat[source_data[self.fiid]])
             
+            if self.config['item_candidates_path'] is not None:
+                # candidate items data
+                last_items = self.inter_feat[end][self.fiid] # [B]
+                last_item_candidates = self.item_candidates_feat[last_items] # [B, 300]
+                data['last_item_candidates'] = last_item_candidates['candidates']
+
             for k, v in source_data.items():
                 if k != self.fuid:
                     data['in_' + k] = v
             return data
         else:
-            return super()._get_pos_data(index)
+            idx = self.data_index[index]
+            data = {self.fuid: idx[:, 0]}
+            data.update(self.user_feat[data[self.fuid]])
+            target_data = self.inter_feat[idx[:, 2]]
+            target_data.update(self.item_feat[target_data[self.fiid]])
+            start = idx[:, 1]
+            end = idx[:, 2]
+            lens = end - start
+            data['seqlen'] = lens
+            l = torch.cat([torch.arange(s, e) for s, e in zip(start, end)])
+            source_data = self.inter_feat[l]
+            for k in source_data:
+                source_data[k] = pad_sequence(source_data[k].split(
+                    tuple(lens.numpy())), batch_first=True)
+            source_data.update(self.item_feat[source_data[self.fiid]])
+
+            if self.config['item_candidates_path'] is not None:
+                # candidate items data
+                last_items = self.inter_feat[end - 1][self.fiid] # the last one is ground truth
+                last_item_candidates = self.item_candidates_feat[last_items]
+                data['last_item_candidates'] = last_item_candidates['candidates']
+
+            for n, d in zip(['in_', ''], [source_data, target_data]):
+                for k, v in d.items():
+                    if k != self.fuid:
+                        data[n+k] = v
+            return data
+    
 
     def _prepare_user_item_feat(self):
+        logger = logging.getLogger('recstudio')
         if self.user_feat is not None:
             self.user_feat.set_index(self.fuid, inplace=True)
             self.user_feat = self.user_feat.reindex(np.arange(self.num_users))
@@ -187,7 +221,6 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                 item_index_data[f'{token}_index'] = pd.Series([0] * self.num_items, dtype=pd.Int64Dtype())
             self.item_index_feat = pd.DataFrame(item_index_data)
             
-            logger = logging.getLogger('recstudio')
             logger.info('start to create item index feat.')
             # for i in tqdm(range(len(self.item_feat))):
             #     product = self.item_feat.iloc[i]
@@ -205,6 +238,43 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         else:
             self.item_feat = pd.DataFrame(
                 {self.fiid: np.arange(self.num_items)})
+            
+        if self.config['item_candidates_path'] is not None:
+            def map_token_2_id(token):
+                if token in self.field2token2idx[self.fiid]:
+                    return self.field2token2idx[self.fiid][token]
+                else:
+                    return 0
+
+            logger.info('Start to process item_candidates!')
+            
+            self.item_candidates_feat = pd.read_feather(self.config['item_candidates_path'])
+            item_ids = list(map(map_token_2_id, self.item_candidates_feat['id']))
+            # item_ids = map((lambda x : self.field2token2idx[x]), self.item_candidates_feat['item'])
+            self.item_candidates_feat['id'] = item_ids 
+            
+            # map item name in array into item id
+            candidates_id_list = []
+            for i in tqdm(range(len(self.item_candidates_feat))):
+                candidates_id = np.array(list(map(map_token_2_id, self.item_candidates_feat.iloc[i]['candidates'])))
+                # candidates_id = map((lambda x : self.field2token2idx[x]), self.item_candidates_feat.iloc[i]['candidates'])
+                candidates_id_list.append(candidates_id)
+            self.item_candidates_feat['candidates'] = candidates_id_list
+
+            # reset id 
+            self.item_candidates_feat = self.item_candidates_feat.set_index('id')
+            self.item_candidates_feat = self.item_candidates_feat.reindex(np.arange(len(self.item_candidates_feat) + 1)) # zero is for padding.
+            
+            # fill nan
+            self.item_candidates_feat.iloc[0]['candidates'] = np.array([0] * 300)
+
+            # config field
+            self.field2type['candidates'] = 'token_seq'
+            self.field2maxlen['candidates'] = 500
+
+    def dataframe2tensors(self):
+        super().dataframe2tensors()
+        self.item_candidates_feat = TensorFrame.fromPandasDF(self.item_candidates_feat, self)
 
     def _get_predict_data_idx(self, splits):
         splits, uids = splits
