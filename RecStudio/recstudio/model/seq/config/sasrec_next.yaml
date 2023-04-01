@@ -1,14 +1,14 @@
 data:
   split_mode: user
-  split_ratio: [0.95, 0.05]
+  split_ratio: [1.0]
 
 eval:
   batch_size: 512
   predict_topk: 100
   test_metrics: [recall, precision, map, ndcg, mrr, hit]
   val_metrics: [mrr, recall, precision, ndcg]
-  cutoff: [100, 200, 300, 400, 500]
-  topk: 600
+  cutoff: [100, 200, 300]
+  topk: 300
 
 model:
   # transformer
@@ -19,11 +19,13 @@ model:
   head_num: 2
   layer_norm_eps: 1e-12
   layer_num: 1
-  softmax_loss: True
+  loss_func: softmax
 
 train:
-  batch_size: 600
-  early_stop_patience: 10
+  batch_size: 1024
+  early_stop_patience: 5
   epochs: 100
   init_method: normal
   negative_count: 1
+  # scheduler: onplateau
+  # weight_decay: 1e-6

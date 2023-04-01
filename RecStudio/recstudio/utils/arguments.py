@@ -9,7 +9,7 @@ _CHOICES = {
     'init_method': ['xavier_normal', 'normal', 'xavier_uniform'],
     'sampling_method': ['none', 'sir', 'dns', 'toprand', 'top&rand', 'brute'],
     'scheduler': ['onplateau', 'exponential'],
-    'learner': ['adam', 'adagrad', 'sgd', 'rmsprop', 'sparse_adam'],
+    'learner': ['adam', 'adagrad', 'sgd', 'rmsprop', 'sparse_adam', 'lion'],
     'sampling_sampler': ['uniform', 'pop', 'midx-uni', 'midx-pop', 'cluster-uni', 'cluster-pop']
 }
 

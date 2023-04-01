@@ -142,7 +142,14 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
         model.config['train']['epochs'] = 0 
         model.fit(*datasets[:2], run_mode='light')
         model.evaluate(datasets[-1], model_path=model_path)
+        # res_df = model.recall_candidates(datasets[-1], model_path=model_path)
 
+        # candidates_path = os.path.join('./candidates', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
+        # save results 
+        # if not os.path.exists(os.path.dirname(candidates_path)):
+        #     os.makedirs(os.path.dirname(candidates_path))
+        # res_df.to_parquet(candidates_path, engine='pyarrow')
+        # model.logger.info(f'Candidates recall is finished, results are saved in {candidates_path}.')
         # predict_dataset = datasets[0].build_test_dataset(prediction_inter_feat_path)
         # model.predict(predict_dataset, prediction_path)
     

@@ -119,14 +119,16 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _get_loss_func(self):
         r"""Binary Cross Entropy is used as the loss function."""
-        if self.config['model']['softmax_loss'] == True:
+        if self.config['model']['loss_func'] == 'softmax':
             return loss_func.SoftmaxLoss()
+        elif self.config['model']['loss_func'] == 'sampled_softmax':
+            return loss_func.SampledSoftmaxLoss()
         else:
             return loss_func.BinaryCrossEntropyLoss()
 
     def _get_sampler(self, train_data):
         r"""Uniform sampler is used as negative sampler."""
-        if self.config['model']['softmax_loss'] == True:
+        if self.config['model']['loss_func'] == 'softmax':
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
@@ -135,9 +137,9 @@ class SASRec_Next(basemodel.BaseRetriever):
     #     r"""Uniform sampler is used as negative sampler."""
     #     return None
 
-    def candidate_topk(self, batch, k, user_h=None, return_query=False):
-        self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]
-        score, topk_items = super().topk(batch, k, user_h, return_query) # [B, 150]
-        topk_items = topk_items - 1 # [B, topk]
-        topk_items = torch.gather(batch['last_item_candidates'], dim=-1, index=topk_items)
-        return score, topk_items
+    # def candidate_topk(self, batch, k, user_h=None, return_query=False):
+    #     self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]
+    #     score, topk_items = super().topk(batch, k, user_h, return_query) # [B, 150]
+    #     topk_items = topk_items - 1 # [B, topk]
+    #     topk_items = torch.gather(batch['last_item_candidates'], dim=-1, index=topk_items)
+    #     return score, topk_items

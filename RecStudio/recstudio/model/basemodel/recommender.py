@@ -22,6 +22,7 @@ from recstudio.utils import callbacks
 from recstudio.utils.utils import *
 from recstudio.data.dataset import (TripletDataset, CombinedLoaders)
 
+from lion_pytorch import Lion 
 
 class Recommender(torch.nn.Module, abc.ABC):
     def __init__(self, config: Dict = None, **kwargs):
@@ -252,6 +253,30 @@ class Recommender(torch.nn.Module, abc.ABC):
         
         self.eval()
         res_df = self.predict_epoch(test_loader, predict_data)
+        return res_df
+
+    def recall_candidates(self, eval_data, verbose=True, model_path=None, **kwargs) -> Dict:
+
+        eval_data.drop_feat(self.fields)
+        eval_loader = eval_data.eval_loader(batch_size=self.config['eval']['batch_size'])      
+        if model_path is None:
+            self.load_checkpoint(os.path.join(self.config['eval']['save_path'], self.ckpt_path))
+            self.logger.info(f"load model parameters from {os.path.join(self.config['eval']['save_path'], self.ckpt_path)}")
+        else:
+            self.load_checkpoint(model_path)
+            self.logger.info(f"load model parameters from {model_path}")
+
+        if 'config' in kwargs:
+            self.config.update(kwargs['config'])
+
+        # if you don't use the config in ckpt, reset it here.
+        # self.config['eval']['predict_topk'] = 100
+        
+        self.eval()
+        res_df, output_list = self.recall_candidates_epoch(eval_loader, eval_data)
+        self.test_epoch_end(output_list)
+        # print result 
+        self.logger.info('\n'+color_dict(self.logged_metrics, self.run_mode == 'tune'))
         return res_df
 
     # def predict(self, batch, k, *args, **kwargs):
@@ -509,6 +534,8 @@ class Recommender(torch.nn.Module, abc.ABC):
             optimizer = optim.SparseAdam(params, lr=learning_rate)
             # if self.weight_decay > 0:
             #    self.logger.warning('Sparse Adam cannot argument received argument [{weight_decay}]')
+        elif name.lower() == 'lion':
+            optimizer = Lion(params, lr=learning_rate, weight_decay=decay)
         else:
             optimizer = optim.Adam(params, lr=learning_rate)
         return optimizer
@@ -526,7 +553,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             if name.lower() == 'exponential':
                 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
             elif name.lower() == 'onplateau':
-                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', patience=2, factor=0.5, verbose=True)
             else:
                 scheduler = None
         else:
@@ -570,8 +597,15 @@ class Recommender(torch.nn.Module, abc.ABC):
                 optimizers = self.current_epoch_optimizers(e)
                 if optimizers is not None:
                     for opt in optimizers:
-                        if 'scheduler' in opt:
-                            opt['scheduler'].step()
+                        if 'lr_scheduler' in opt:
+                            if self.config['train']['scheduler'] == 'onplateau':
+                                val_metrics = self.config['eval']['val_metrics']
+                                cutoff = self.config['eval']['cutoff']
+                                metrics_name = eval.get_eval_metrics(val_metrics, cutoff, True)[0]
+                                opt['lr_scheduler']['scheduler'].step(self.logged_metrics[metrics_name])
+                            else:
+                                opt['lr_scheduler']['scheduler'].step()
+                            self.logger.info(f'Current learning rate : {opt["optimizer"].param_groups[0]["lr"]}')
 
                 # model is saved in callback when the callback return True.
                 if nepoch % self.config['eval']['val_n_epoch'] == 0:
@@ -725,6 +759,29 @@ class Recommender(torch.nn.Module, abc.ABC):
         res_df = res_df.reset_index(drop=True)
     
         return res_df
+
+    @torch.no_grad()
+    def recall_candidates_epoch(self, dataloader, dataset):
+        if hasattr(self, '_update_item_vector'):
+            self._update_item_vector()
+
+        output_list = []
+        res_df = pd.DataFrame({'locale' : [], 'candidates' : [], 'sess_id' : []})
+        for batch in tqdm(dataloader):
+            # data to device
+            batch = self._to_device(batch, self._parameter_device)
+
+            # model predict results
+            candidates_df, output = self.recall_candidates_step(batch, dataset)
+            output_list.append(output)
+            # prediction_df = self.candidate_predict_step(batch, dataset)
+
+            # concat df 
+            res_df = pd.concat([res_df, candidates_df], axis=0)
+
+        res_df = res_df.reset_index(drop=True)
+    
+        return res_df, output_list
     
     @abc.abstractmethod
     def predict_step(self, batch, dataset):
