@@ -67,7 +67,7 @@ class CoOccuGraph():
             df = group_pointwise_df(train_df)
         else:
             df = train_df
-        sess_id_list = get_sessions(df, self.item_map, test=~use_last_item, original_file=original_file)
+        sess_id_list = get_sessions(df, self.item_map, use_last_item=use_last_item, original_file=original_file)
         if verbose:
             iterator = tqdm(sess_id_list)
         else:
@@ -78,7 +78,7 @@ class CoOccuGraph():
             if len(l) <= 1:
                 continue
             for i, item1 in enumerate(l):
-                if id not in res:
+                if item1 not in res:
                     res[item1] = Counter()
                 for j in range(i+1, len(l)):
                     item2 = l[j]
@@ -119,7 +119,7 @@ class CoOccuGraph():
 
 
     def get_neighbors(self, item_id: int, sort: bool=True) -> tuple:
-        indptr = self.graph.indptr[item_id: item_id+2]
+        indptr = self.graph.indptr[[item_id, item_id+1]]
         indices = self.graph.indices[indptr[0]:indptr[1]]
         data = self.graph.data[indptr[0]:indptr[1]]
         if sort:
@@ -146,7 +146,7 @@ class CoOccuGraph():
     def predict(self, test_df: pd.DataFrame, last_item_only: bool=True, k: int=None, original_file: bool=False, verbose: bool=True):
         if not original_file:
             test_df = group_pointwise_df(test_df)
-        sess_id_list = get_sessions(test_df, self.item_map, True, original_file, last_item_only)
+        sess_id_list = get_sessions(test_df, self.item_map, use_last_item=False, original_file=original_file, return_last_only=last_item_only)
         sess_locale = test_df['locale'].tolist()
         if verbose:
             iterator = tqdm(enumerate(sess_id_list), total=len(sess_id_list))
@@ -154,22 +154,25 @@ class CoOccuGraph():
             iterator = enumerate(sess_id_list)
 
         res = []
+        length = []
         for i, item in iterator:
             if last_item_only:
                 neighbors, _ = self.get_neighbors(item)
             else:
                 neighbors, _ = self.get_neighbors_for_list(item)
             if k is not None:   # pad/cut result to specific length
-                if len(neighbors) <= k:
+                length.append(min(len(neighbors), k))
+                if len(neighbors) < k:
                     locale = sess_locale[i]
                     pop_items = random.sample(self.pop_items[locale], k-len(neighbors))
                     res.append([self.id2pid[x] for x in neighbors]+pop_items)
                 else:
                     res.append([self.id2pid[x] for x in neighbors[:k]])
             else:
+                length.append(len(neighbors))
                 res.append([self.id2pid[x] for x in neighbors])
         
-        return pd.DataFrame({'next_item_prediction': res, 'locale': sess_locale})
+        return pd.DataFrame({'next_item_prediction': res, 'locale': sess_locale, 'num_neighbors': length})
     
     def save(self, fname: str):
         with open(fname, 'wb') as f:
@@ -205,13 +208,11 @@ if __name__ == "__main__":
 
     if not os.path.exists(f'./graph_{data_type}.gph'):
         graph.construct_graph(train_df,)
+        test_graph = CoOccuGraph(item_map).construct_graph(test_df, use_last_item=False)
+        graph.graph = graph.graph + test_graph
         graph.save(f'./graph_{data_type}.gph')
     else:
         graph.load(f'./graph_{data_type}.gph')
-
-    test_graph = CoOccuGraph(item_map).construct_graph(test_df, True)
-
-    graph.graph = graph.graph + test_graph
 
     pred = graph.predict(test_df, k=None, original_file=False)
     pred.to_parquet(f'./pred_{data_type}.parquet', engine='pyarrow')
