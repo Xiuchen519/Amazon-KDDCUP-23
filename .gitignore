@@ -145,3 +145,6 @@ datasets/*
 /best_ckpt
 /predictions
 *.parquet
+*.gph
+*.csv
+*.ftr
