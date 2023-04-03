@@ -498,3 +498,42 @@ class BaseRetriever(Recommender):
         prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens})
 
         return prediction_df
+    
+
+    def recall_candidates_step(self, batch, dataset:advance_dataset.KDDCUPDataset):
+        # get metric and cutoffs 
+        eval_metric = self.config['eval']['test_metrics']
+        cutoffs = self.config['eval']['cutoff'] if isinstance(self.config['eval']['cutoff'], list) else [self.config['eva']['cutoff']]
+        
+        # topk 
+        rank_m = eval.get_rank_metrics(eval_metric)
+        topk = self.config['eval']['topk']
+        bs = batch[self.frating].size(0)
+        assert len(rank_m) > 0
+        score, topk_items = self.topk(batch, topk, batch['user_hist'])
+        if batch[self.fiid].dim() > 1:
+            target, _ = batch[self.fiid].sort()
+            idx_ = torch.searchsorted(target, topk_items)
+            idx_[idx_ == target.size(1)] = target.size(1) - 1
+            label = torch.gather(target, 1, idx_) == topk_items
+            pos_rating = batch[self.frating]
+        else:
+            label = batch[self.fiid].view(-1, 1) == topk_items
+            pos_rating = batch[self.frating].view(-1, 1)
+        
+        # map id to name 
+        # topk items 
+        topk_item_tokens = []
+        for topk_items_u in topk_items:
+            tokens = dataset.field2tokens[self.fiid][topk_items_u.cpu()].tolist()
+            topk_item_tokens.append(tokens)
+        # locale id to locale name 
+        locales_ids = batch['in_' + 'locale'][:, 0] # [B]
+        locale_tokens = dataset.field2tokens['locale'][locales_ids.cpu()].tolist()
+        # sess id 
+        sess_ids = batch[self.fuid]
+        sess_tokens = dataset.field2tokens[self.fuid][sess_ids.cpu()].tolist()
+
+        candidates_df = pd.DataFrame({'sess_id' : sess_tokens, 'locale' : locale_tokens, 'candidates' : topk_item_tokens})
+
+        return candidates_df, ({f"{name}@{cutoff}": func(label, pos_rating, cutoff) for cutoff in cutoffs for name, func in rank_m}, bs)

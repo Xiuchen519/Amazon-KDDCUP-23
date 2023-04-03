@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd 
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from recstudio.data.dataset import TripletDataset, SeqDataset, SeqToSeqDataset, TensorFrame, SessionDataset, SessionSliceDataset
+from recstudio.data.dataset import TripletDataset, SeqDataset, SeqToSeqDataset, TensorFrame, SessionDataset, SessionSliceDataset, DataSampler, DistributedSamplerWrapper
+from torch.utils.data import DataLoader, Dataset, Sampler
+
 from tqdm import tqdm 
 import logging 
 import warnings
@@ -12,7 +14,6 @@ import scipy.sparse as ssp
 from recstudio.utils import *
 from typing import *
 import pickle
-
 
 
 
@@ -354,6 +355,23 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         output = [torch.from_numpy(_) for _ in output]
         return output
 
+    def _get_valid_data_idx(self, splits):
+        splits, uids = splits
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0]).max()
+
+        def get_slice(sps, uids):
+            data = []
+            for i, sp in enumerate(sps): # predict  
+                if sp[1] > sp[0]:
+                    slice_end = sp[1] - 1
+                    slice_start = max(sp[0], sp[1] - maxlen - 1) # the length should be maxlen + 1
+                    data.append(np.array([uids[i], slice_start, slice_end]))
+            return np.array(data)
+
+        output = [get_slice(splits, uids)]
+        output = [torch.from_numpy(_) for _ in output]
+        return output
+
     def get_all_session_hist(self, isUser=True):
         r"""Get session history, include the last item.
 
@@ -397,6 +415,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         
         # copy dataset to generate predict dataset 
         test_dataset = copy.copy(self)
+        test_dataset.field2tokens = copy.copy(self.field2tokens)
         test_dataset.field2tokens['sess_id'] = np.concatenate([['[PAD]'], np.arange(test_inter_feat['sess_id'].astype('int').max() + 1)])
         test_dataset.field2token2idx['sess_id'] = {token : i for i, token in enumerate(test_dataset.field2tokens['sess_id'])}
         test_dataset.user_feat = pd.DataFrame(
@@ -449,23 +468,24 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         
         if self.frating is None:
             self.frating = 'rating'
-        if self.frating not in valid_inter_feat:
-            # add ratings when implicit feedback
-            self.frating = 'rating'
-            valid_inter_feat.insert(0, self.frating, 1)
             self.field2type[self.frating] = 'float'
             self.field2maxlen[self.frating] = 1
+        if self.frating not in valid_inter_feat:
+            # add ratings when implicit feedback
+            valid_inter_feat.insert(0, self.frating, 1)
         
         # copy dataset to generate predict dataset 
         valid_dataset = copy.copy(self)
 
         # map ids 
         # user_feat, sess id as user id
+        # Don't change the key in origin field2tokens, since field2tokens is shared. copy it first.   
+        valid_dataset.field2tokens = copy.copy(self.field2tokens)
         valid_dataset.field2tokens['sess_id'] = np.concatenate([['[PAD]'], np.arange(valid_inter_feat['sess_id'].astype('int').max() + 1)])
         valid_dataset.field2token2idx['sess_id'] = {token : i for i, token in enumerate(valid_dataset.field2tokens['sess_id'])}
         valid_dataset.user_feat = pd.DataFrame(
                 {self.fuid: np.arange(valid_dataset.num_users)})
-        # inter_feat 
+        # inter_feat sess_id is also remapped here
         for inter_field in self.config['inter_feat_field']:
             field_name, field_type = inter_field.split(':')[0], inter_field.split(':')[1]
             if 'float' in field_type:
@@ -491,7 +511,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         valid_dataset.user_feat = TensorFrame.fromPandasDF(valid_dataset.user_feat, self)
         valid_dataset.inter_feat = valid_inter_feat
         
-        valid_dataset.data_index = self._get_predict_data_idx((splits, uids))[0]
+        valid_dataset.data_index = self._get_valid_data_idx((splits, uids))[0]
         user_hist, user_count = valid_dataset.get_eval_session_hist(True)
         valid_dataset.user_hist = user_hist
         valid_dataset.user_count = user_count
@@ -508,6 +528,24 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         self.predict_mode = True # set mode to prediction.
         return self.loader(batch_size, shuffle, num_workers, drop_last, ddp)
 
+    def eval_loader(self, batch_size, num_workers=0, ddp=False):
+        self.eval_mode = True
+        if not getattr(self, 'fmeval', False):
+            # if ddp:
+            #     sampler = torch.utils.data.distributed.DistributedSampler(self, shuffle=False)
+            #     output = DataLoader(
+            #         self, sampler=sampler, batch_size=batch_size, num_workers=num_workers)
+            # else:
+            sampler = DataSampler(self, batch_size, shuffle=False, drop_last=False)
+            if ddp:
+                sampler = DistributedSamplerWrapper(sampler, shuffle=False)
+            output = DataLoader(
+                self, sampler=sampler, batch_size=None, shuffle=False,
+                num_workers=num_workers, persistent_workers=False)
+            return output
+        else:
+            self.eval_mode = True
+            return self.loader(batch_size, shuffle=False, num_workers=num_workers, ddp=ddp)
     
 
 
