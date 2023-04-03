@@ -69,6 +69,11 @@ class BaseRanker(Recommender):
                 multi_item_batch[k] = multi_item_batch[k].reshape(-1, *(v.shape[1:]))
             else:
                 multi_item_batch[k] = items[k]
+        
+        for k, v in items.items():
+            if k not in multi_item_batch:
+                multi_item_batch[k] = v
+                
         return multi_item_batch
 
     def forward(self, batch):
