@@ -143,6 +143,32 @@ class CoOccuGraph():
         return indices, data
 
 
+    def generate_item_candidates(self, k: int=None) -> pd.DataFrame:
+        all_item_id = list(range(1, self.num_items))
+
+        res = []
+        length = []
+        for item in tqdm(all_item_id):
+            # if last_item_only:
+            neighbors, _ = self.get_neighbors(item)
+            if k is not None:   # pad/cut result to specific length
+                length.append(min(len(neighbors), k))
+                if len(neighbors) < k:
+                    locale = 'UK'   # any one due to locale_sensitive=False
+                    pop_items = random.sample(self.pop_items[locale], k-len(neighbors))
+                    res.append([self.id2pid[x] for x in neighbors]+pop_items)
+                else:
+                    res.append([self.id2pid[x] for x in neighbors[:k]])
+            else:
+                length.append(len(neighbors))
+                res.append([self.id2pid[x] for x in neighbors])
+        
+        item_pid = [self.id2pid[x] for x in all_item_id]
+        
+        return pd.DataFrame({'id': item_pid, 'candidates': res, 'num_neighbors': length})
+
+
+
     def predict(self, test_df: pd.DataFrame, last_item_only: bool=True, k: int=None, original_file: bool=False, verbose: bool=True):
         if not original_file:
             test_df = group_pointwise_df(test_df)
@@ -174,10 +200,12 @@ class CoOccuGraph():
         
         return pd.DataFrame({'next_item_prediction': res, 'locale': sess_locale, 'num_neighbors': length})
     
+
     def save(self, fname: str):
         with open(fname, 'wb') as f:
             pickle.dump(self, f)
         print(f'Graph data saved in {fname}.')
+
 
     def add(self, graph: ssp.csr_matrix):
         assert self.graph.shape == graph.shape, 'The shape of graph should be the same with the self.graph.'
@@ -204,17 +232,22 @@ if __name__ == "__main__":
     product_df = pd.read_csv(os.path.join(work_dir, 'raw_data/products_train.csv'))
     item_map = { id: i+1 for i, id in enumerate(product_df['id'].unique()) }    # 0 saved for padding
 
-    graph = CoOccuGraph(item_map)
+    graph = CoOccuGraph(item_map, locale_sensitive=False)
 
     if not os.path.exists(f'./graph_{data_type}.gph'):
-        graph.construct_graph(train_df,)
+        graph.construct_graph(train_df)
         test_graph = CoOccuGraph(item_map).construct_graph(test_df, use_last_item=False)
         graph.graph = graph.graph + test_graph
         graph.save(f'./graph_{data_type}.gph')
     else:
         graph.load(f'./graph_{data_type}.gph')
 
-    pred = graph.predict(test_df, k=None, original_file=False)
-    pred.to_parquet(f'./pred_{data_type}.parquet', engine='pyarrow')
+    pred_k = 50
+    pred = graph.predict(test_df, k=pred_k, original_file=False)
+    pred.to_parquet(f'./pred_{data_type}_{pred_k}.parquet', engine='pyarrow')
+
+    # k = 50
+    # item_neighbors = graph.generate_item_candidates(k=k)
+    # item_neighbors.to_parquet(f'./item_candidates_{k}.parquet', engine='pyarrow')
 
     print("Test end.")
