@@ -1,4 +1,4 @@
-import os, time
+import os, time, torch
 from typing import *
 from recstudio.utils import *
 import logging 
@@ -78,6 +78,7 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
     if kwargs is not None:
         model_conf = deep_update(model_conf, kwargs)
 
+    torch.set_num_threads(model_conf['train']['num_threads'])
     model_name = model
     dataset_name = dataset
     log_path = time.strftime(f"{model}/{dataset}/%Y-%m-%d-%H-%M-%S.log", time.localtime())
@@ -114,12 +115,12 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
     logger.info(f"{datasets[0]}")
     logger.info(f"\n{set_color('Model Config', 'green')}: \n\n" + color_dict_normal(model_conf, False))
     
-    # prediction_inter_feat_DE_path = './data_for_recstudio/test_inter_feat_task1_DE.csv'
-    # prediction_inter_feat_JP_path = './data_for_recstudio/test_inter_feat_task1_JP.csv'
-    # prediction_inter_feat_UK_path = './data_for_recstudio/test_inter_feat_task1_UK.csv'
-    # task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
-    task3_prediction_inter_feat_path = './data_for_recstudio/test_inter_feat_task3.csv'
-    task3_prediction_inter_feat_list = [task3_prediction_inter_feat_path]
+
+    data_dir = "/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio"
+    prediction_inter_feat_DE_path = os.path.join(data_dir, 'test_inter_feat_task1_DE.csv')
+    prediction_inter_feat_JP_path = os.path.join(data_dir, 'test_inter_feat_task1_JP.csv')
+    prediction_inter_feat_UK_path = os.path.join(data_dir, 'test_inter_feat_task1_UK.csv')
+    task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
     if do_prediction == True:
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         # init model 
@@ -127,7 +128,7 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
         model._init_model(datasets[0])
 
         res_dfs = []
-        for pred_path in task3_prediction_inter_feat_list:
+        for pred_path in task1_prediction_inter_feat_list:
             predict_dataset = datasets[0].build_test_dataset(pred_path)
             res_df = model.predict(predict_dataset, model_path=model_path, with_score=args.with_score)
             res_dfs.append(res_df)

@@ -870,7 +870,8 @@ class Recommender(torch.nn.Module, abc.ABC):
         # if ( hasattr(self, '_update_item_vector') and (not hasattr(self,'item_vector')) ) or \
         # (self.item_vector.shape != ckpt['parameters']['item_vector'].shape) :
         #     self._update_item_vector()
-        self._update_item_vector()
+        if hasattr(self, '_update_item_vector'):
+            self._update_item_vector()
         # if 'item_vector' not in ckpt['parameters']:
-        ckpt['parameters']['item_vector'] = self.item_vector
+            ckpt['parameters']['item_vector'] = self.item_vector
         self.load_state_dict(ckpt['parameters'])

@@ -202,6 +202,16 @@ class BCEWithLogitLoss(PointwiseLoss):
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
             pos_score, label, reduction=self.reduction)
         return loss
+    
+class BCELoss(PointwiseLoss):
+    def __init__(self, reduction: str='mean') -> None:
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, label, pos_score):
+        loss = torch.nn.functional.binary_cross_entropy(
+            pos_score, label, reduction=self.reduction)
+        return loss
 
 
 class MSELoss(PointwiseLoss):

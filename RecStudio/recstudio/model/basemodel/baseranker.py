@@ -69,6 +69,11 @@ class BaseRanker(Recommender):
                 multi_item_batch[k] = multi_item_batch[k].reshape(-1, *(v.shape[1:]))
             else:
                 multi_item_batch[k] = items[k]
+        
+        for k, v in items.items():
+            if k not in multi_item_batch:
+                multi_item_batch[k] = v
+                
         return multi_item_batch
 
     def forward(self, batch):
@@ -92,9 +97,9 @@ class BaseRanker(Recommender):
         if item_ids is not None:
             neg_batch = self._generate_multi_item_batch(batch, item_ids)
             num_neg = item_ids.size(-1) 
-            return self.score(neg_batch)
+            return self.score(neg_batch).view(-1, num_neg)
         else:
-            return self.score(batch)
+            return self.score(batch).view(-1, 1)
 
     def score(self, batch):
         # score for a single interaction.
@@ -204,3 +209,7 @@ class BaseRanker(Recommender):
                 else:
                     out[m] = f(scores, labels)
         return out
+    
+    def predict_step(self, batch, dataset):
+        return super().predict_step(batch, dataset)
+

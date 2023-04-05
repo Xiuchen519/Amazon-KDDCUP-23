@@ -1,0 +1,24 @@
+data:
+  split_mode: user
+  split_ratio: [0.95, 0.05]
+
+model:
+  embed_dim: 128
+  nhead: 2
+  dim_feedforward: 256
+  dropout: 0.5
+  num_layers: 1
+  activation: gelu
+  mlp_layer: ~
+  
+eval:
+  batch_size: 512
+  predict_topk: 100
+  test_metrics: [auc, logloss]
+  val_metrics: [auc, logloss]
+
+train:
+  batch_size: 512
+  early_stop_patience: 10
+  epochs: 100
+  init_method: normal

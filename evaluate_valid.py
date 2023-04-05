@@ -28,11 +28,16 @@ def group_pointwise_df(df: pd.DataFrame) -> pd.DataFrame:
 def evaluate(tgt_df, pred_df) -> dict:
     assert len(tgt_df) == len(pred_df), 'Length not equal.'
     assert (tgt_df['locale'] == pred_df['locale']).sum() == len(tgt_df), 'Locale not consisent.'
+    if 'next_item_prediction' not in pred_df:
+        if 'candidates' in pred_df:
+            pred_df = pred_df.rename(columns = {'candidates': 'next_item_prediction'})
     pred_list_len = pred_df['next_item_prediction'].apply(len)
     if pred_list_len.var() == 0:
         k = pred_list_len[0]
     else:
-        k = '?'
+        k = 'ALL'
+        avg_len = pred_list_len.mean()
+        print("Mean length of prediction = {:.4f}".format(avg_len))
     truth = tgt_df['next_item'].tolist()
     pred = pred_df['next_item_prediction'].tolist()
     
@@ -62,7 +67,11 @@ def main():
     valid_df = group_pointwise_df(valid_df)
     valid_df = valid_df[['locale', 'next_item']]
     
-    pred_file_path = os.path.join(WORK_DIR, args.file)
+    if os.path.exists(args.file):
+        pred_file_path = args.file
+    else:
+        pred_file_path = os.path.join(WORK_DIR, args.file)
+    
     pred_df = pd.read_parquet(pred_file_path, engine='pyarrow')   # ['locale', 'next_item_prediction']
 
     result = evaluate(valid_df, pred_df)

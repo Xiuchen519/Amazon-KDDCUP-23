@@ -146,5 +146,10 @@ datasets/*
 /predictions
 *.parquet
 
+*.gph
+*.csv
+*.ftr
+
 # RetroMAE
 data
+

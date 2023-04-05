@@ -301,29 +301,37 @@ class KDDCUPSeqDataset(SessionSliceDataset):
 
             logger.info('Start to process item_candidates!')
             
-            self.item_candidates_feat = pd.read_feather(self.config['item_candidates_path'])
-            item_ids = list(map(map_token_2_id, self.item_candidates_feat['id']))
+            if self.config['item_candidates_path'].endswith("ftr"):
+                self.item_candidates_feat = pd.read_feather(self.config['item_candidates_path'])
+            elif self.config['item_candidates_path'].endswith("parquet"):
+                self.item_candidates_feat = pd.read_parquet(self.config['item_candidates_path'], engine='pyarrow')
+            else:
+                raise NotImplementedError("Only supported for ftr and parquet format file.")
+            self.item_candidates_feat = self.item_candidates_feat[['id', 'candidates']]
+            # item_ids = list(map(map_token_2_id, self.item_candidates_feat['id']))
             # item_ids = map((lambda x : self.field2token2idx[x]), self.item_candidates_feat['item'])
-            self.item_candidates_feat['id'] = item_ids 
+            self.item_candidates_feat['id'] = self.item_candidates_feat['id'].apply(map_token_2_id)
+            self.item_candidates_feat['candidates'] = self.item_candidates_feat['candidates'].apply(lambda x: np.array([map_token_2_id(_) for _ in x]))
             
             # map item name in array into item id
-            candidates_id_list = []
-            for i in tqdm(range(len(self.item_candidates_feat))):
-                candidates_id = np.array(list(map(map_token_2_id, self.item_candidates_feat.iloc[i]['candidates'])))
-                # candidates_id = map((lambda x : self.field2token2idx[x]), self.item_candidates_feat.iloc[i]['candidates'])
-                candidates_id_list.append(candidates_id)
-            self.item_candidates_feat['candidates'] = candidates_id_list
+            # candidates_id_list = []
+            # for i in tqdm(range(len(self.item_candidates_feat))):
+            #     candidates_id = np.array(list(map(map_token_2_id, self.item_candidates_feat.iloc[i]['candidates'])))
+            #     # candidates_id = map((lambda x : self.field2token2idx[x]), self.item_candidates_feat.iloc[i]['candidates'])
+            #     candidates_id_list.append(candidates_id)
+            # self.item_candidates_feat['candidates'] = candidates_id_list
+            max_candidates_len = self.item_candidates_feat['candidates'].apply(len).max()
 
             # reset id 
             self.item_candidates_feat = self.item_candidates_feat.set_index('id')
             self.item_candidates_feat = self.item_candidates_feat.reindex(np.arange(len(self.item_candidates_feat) + 1)) # zero is for padding.
             
             # fill nan
-            self.item_candidates_feat.iloc[0]['candidates'] = np.array([0] * 300)
+            self.item_candidates_feat.iloc[0]['candidates'] = np.array([0] * max_candidates_len)
 
             # config field
             self.field2type['candidates'] = 'token_seq'
-            self.field2maxlen['candidates'] = 500
+            self.field2maxlen['candidates'] = max_candidates_len
 
     def dataframe2tensors(self):
         super().dataframe2tensors()
