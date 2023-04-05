@@ -7,8 +7,8 @@ eval:
   predict_topk: 100
   test_metrics: [recall, precision, map, ndcg, mrr, hit]
   val_metrics: [mrr, recall, precision, ndcg]
-  cutoff: [100, 200, 300]
-  topk: 300
+  cutoff: [100, 200]
+  topk: 200
 
 model:
   # transformer
@@ -19,13 +19,13 @@ model:
   head_num: 2
   layer_norm_eps: 1e-12
   layer_num: 1
-  loss_func: softmax
+  loss_func: sampled_softmax
+  use_gate: False
 
 train:
   batch_size: 1024
   early_stop_patience: 5
   epochs: 100
   init_method: normal
-  negative_count: 1
-  # scheduler: onplateau
+  negative_count: 10000
   # weight_decay: 1e-6
