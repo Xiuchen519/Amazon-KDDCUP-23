@@ -1,4 +1,4 @@
-import os, time
+import os, time, torch
 from typing import *
 from recstudio.utils import *
 import logging 
@@ -59,7 +59,7 @@ def run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=Non
     model.evaluate(datasets[-1])
 
 
-def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True,
+def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True,
                 do_prediction=False, do_evaluate=False, model_path=None, **kwargs):
     model_class, model_conf = get_model(model)
 
@@ -78,6 +78,7 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
     if kwargs is not None:
         model_conf = deep_update(model_conf, kwargs)
 
+    torch.set_num_threads(model_conf['train']['num_threads'])
     model_name = model
     dataset_name = dataset
     log_path = time.strftime(f"{model}/{dataset}/%Y-%m-%d-%H-%M-%S.log", time.localtime())
@@ -114,9 +115,11 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
     logger.info(f"{datasets[0]}")
     logger.info(f"\n{set_color('Model Config', 'green')}: \n\n" + color_dict_normal(model_conf, False))
     
-    prediction_inter_feat_DE_path = './data_for_recstudio/test_inter_feat_task1_DE.csv'
-    prediction_inter_feat_JP_path = './data_for_recstudio/test_inter_feat_task1_JP.csv'
-    prediction_inter_feat_UK_path = './data_for_recstudio/test_inter_feat_task1_UK.csv'
+
+    data_dir = "/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio"
+    prediction_inter_feat_DE_path = os.path.join(data_dir, 'test_inter_feat_task1_DE.csv')
+    prediction_inter_feat_JP_path = os.path.join(data_dir, 'test_inter_feat_task1_JP.csv')
+    prediction_inter_feat_UK_path = os.path.join(data_dir, 'test_inter_feat_task1_UK.csv')
     task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
     if do_prediction == True:
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
@@ -127,7 +130,7 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
         res_dfs = []
         for pred_path in task1_prediction_inter_feat_list:
             predict_dataset = datasets[0].build_test_dataset(pred_path)
-            res_df = model.predict(predict_dataset, model_path=model_path)
+            res_df = model.predict(predict_dataset, model_path=model_path, with_score=args.with_score)
             res_dfs.append(res_df)
         res_df = pd.concat(res_dfs, axis=0)
         res_df = res_df.reset_index(drop=True)
@@ -142,7 +145,14 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
         model.config['train']['epochs'] = 0 
         model.fit(*datasets[:2], run_mode='light')
         model.evaluate(datasets[-1], model_path=model_path)
+        # res_df = model.recall_candidates(datasets[-1], model_path=model_path)
 
+        # candidates_path = os.path.join('./candidates', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
+        # save results 
+        # if not os.path.exists(os.path.dirname(candidates_path)):
+        #     os.makedirs(os.path.dirname(candidates_path))
+        # res_df.to_parquet(candidates_path, engine='pyarrow')
+        # model.logger.info(f'Candidates recall is finished, results are saved in {candidates_path}.')
         # predict_dataset = datasets[0].build_test_dataset(prediction_inter_feat_path)
         # model.predict(predict_dataset, prediction_path)
     

@@ -1523,7 +1523,7 @@ class SessionSliceDataset(SeqDataset):
                 for i, sp in enumerate(sps):
                     if sp[sp_idx] > sp[sp_idx - 1]:
                         for slice_end in range(sp[sp_idx - 1], sp[sp_idx]):
-                            slice_start = max(sp[0], slice_end - maxlen)
+                            slice_start = max(sp[sp_idx - 1], slice_end - maxlen)
                             if slice_start != slice_end:
                                 data.append(np.array([uids[i], slice_start, slice_end]))
                 return np.array(data)

@@ -145,7 +145,7 @@ class HingeLoss(PairwiseLoss):
 
     def forward(self, label, pos_score, log_pos_prob, neg_score, log_neg_prob):
         loss = torch.maximum(torch.max(neg_score, dim=-1).values - pos_score +
-                             self.margin, torch.tensor([0]).type_as(pos_score))
+                             self.margin, pos_score.new_zeros((1,)))
         if self.n_items is not None:
             impostors = neg_score - pos_score.view(-1, 1) + self.margin > 0
             rank = torch.mean(impostors, -1) * self.n_items
@@ -200,6 +200,16 @@ class BCEWithLogitLoss(PointwiseLoss):
 
     def forward(self, label, pos_score):
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            pos_score, label, reduction=self.reduction)
+        return loss
+    
+class BCELoss(PointwiseLoss):
+    def __init__(self, reduction: str='mean') -> None:
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, label, pos_score):
+        loss = torch.nn.functional.binary_cross_entropy(
             pos_score, label, reduction=self.reduction)
         return loss
 
