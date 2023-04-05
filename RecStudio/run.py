@@ -13,7 +13,7 @@ if __name__ == '__main__':
     model_class, model_conf = get_model(args.model)
     model_conf = deep_update(model_conf, command_line_conf)
 
-    quickstart.kdd_cup_run(args.model, args.dataset, model_config=model_conf, data_config_path=args.data_config_path, 
+    quickstart.kdd_cup_run(args.model, args.dataset, args, model_config=model_conf, data_config_path=args.data_config_path, 
                            do_prediction=args.do_prediction, do_evaluate=args.do_evaluate, model_path=args.model_path)
     
     # quickstart.run(args.model, args.dataset, model_config=model_conf, data_config_path=args.data_config_path)
