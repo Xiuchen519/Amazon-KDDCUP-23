@@ -227,7 +227,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             self.logger.info(color_dict(output, self.run_mode == 'tune'))
         return output
 
-    def predict(self, predict_data, verbose=True, model_path=None, **kwargs) -> Dict:
+    def predict(self, predict_data, with_score, verbose=True, model_path=None, **kwargs) -> Dict:
         r""" Predict for predict data.
 
         Args:
@@ -254,7 +254,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         # self.config['eval']['predict_topk'] = 100
         
         self.eval()
-        res_df = self.predict_epoch(test_loader, predict_data)
+        res_df = self.predict_epoch(test_loader, predict_data, with_score)
         return res_df
 
     def recall_candidates(self, eval_data, verbose=True, model_path=None, **kwargs) -> Dict:
@@ -555,7 +555,9 @@ class Recommender(torch.nn.Module, abc.ABC):
             if name.lower() == 'exponential':
                 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
             elif name.lower() == 'onplateau':
-                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', patience=2, factor=0.5, verbose=True)
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', 
+                                                                       patience=self.config['train']['scheduler_patience'],
+                                                                       factor=self.config['train']['scheduler_factor'], verbose=True)
             else:
                 scheduler = None
         else:
@@ -742,7 +744,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         return output_list
 
     @torch.no_grad()
-    def predict_epoch(self, dataloader, dataset):
+    def predict_epoch(self, dataloader, dataset, with_score=False):
         if hasattr(self, '_update_item_vector'):
             self._update_item_vector()
 
@@ -752,7 +754,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             batch = self._to_device(batch, self._parameter_device)
 
             # model predict results
-            prediction_df = self.predict_step(batch, dataset)
+            prediction_df = self.predict_step(batch, dataset, with_score)
             # prediction_df = self.candidate_predict_step(batch, dataset)
 
             # concat df 

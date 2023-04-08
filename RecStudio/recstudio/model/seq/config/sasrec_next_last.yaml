@@ -1,0 +1,29 @@
+data:
+  split_mode: user
+  split_ratio: [0.95, 0.05]
+
+eval:
+  batch_size: 512
+  predict_topk: 100
+  test_metrics: [recall, precision, map, ndcg, mrr, hit]
+  val_metrics: [mrr, recall, precision, ndcg]
+  cutoff: [100, 20, 50, 10, 5]
+
+model:
+  # transformer
+  embed_dim: 128
+  activation: 'gelu'
+  dropout_rate: 0.5
+  hidden_size: 256
+  head_num: 2
+  layer_norm_eps: 1e-12
+  layer_num: 1
+  softmax_loss: False
+  last_weight: 0.2
+
+train:
+  batch_size: 2048
+  early_stop_patience: 10
+  epochs: 100
+  init_method: normal
+  negative_count: 5

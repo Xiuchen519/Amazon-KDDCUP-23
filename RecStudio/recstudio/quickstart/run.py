@@ -59,7 +59,7 @@ def run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=Non
     model.evaluate(datasets[-1])
 
 
-def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True,
+def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True,
                 do_prediction=False, do_evaluate=False, model_path=None, **kwargs):
     model_class, model_conf = get_model(model)
 
@@ -130,7 +130,7 @@ def kdd_cup_run(model: str, dataset: str, model_config: Dict=None, data_config: 
         res_dfs = []
         for pred_path in task1_prediction_inter_feat_list:
             predict_dataset = datasets[0].build_test_dataset(pred_path)
-            res_df = model.predict(predict_dataset, model_path=model_path)
+            res_df = model.predict(predict_dataset, model_path=model_path, with_score=args.with_score)
             res_dfs.append(res_df)
         res_df = pd.concat(res_dfs, axis=0)
         res_df = res_df.reset_index(drop=True)

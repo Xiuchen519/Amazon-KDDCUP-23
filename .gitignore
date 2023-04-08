@@ -145,6 +145,11 @@ datasets/*
 /best_ckpt
 /predictions
 *.parquet
+
 *.gph
 *.csv
 *.ftr
+
+# RetroMAE
+data
+

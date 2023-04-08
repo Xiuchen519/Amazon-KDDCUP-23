@@ -431,7 +431,7 @@ class BaseRetriever(Recommender):
             pos_rating = batch[self.frating].view(-1, 1)
         return {f"{name}@{cutoff}": func(label, pos_rating, cutoff) for cutoff in cutoffs for name, func in rank_m}, bs
     
-    def predict_step(self, batch, dataset:advance_dataset.KDDCUPDataset):
+    def predict_step(self, batch, dataset:advance_dataset.KDDCUPDataset, with_score:bool=False):
         topk = self.config['eval']['predict_topk']
 
         # use items in single locale
@@ -454,16 +454,16 @@ class BaseRetriever(Recommender):
         for topk_items_u in topk_items:
             tokens = dataset.field2tokens[self.fiid][topk_items_u.cpu()].tolist()
             topk_item_tokens.append(tokens)
-
-        
-        
         
         # turn locale id to locale name 
         locales_ids = batch['in_' + 'locale']
         locale_tokens = [dataset.field2tokens['locale'][locale_id[0]] for locale_id in locales_ids]
 
-        prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens})
 
+        if not with_score:
+            prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens})
+        else:
+            prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens, 'score' : score.cpu().tolist()})
         return prediction_df
 
     
@@ -537,3 +537,6 @@ class BaseRetriever(Recommender):
         candidates_df = pd.DataFrame({'sess_id' : sess_tokens, 'locale' : locale_tokens, 'candidates' : topk_item_tokens})
 
         return candidates_df, ({f"{name}@{cutoff}": func(label, pos_rating, cutoff) for cutoff in cutoffs for name, func in rank_m}, bs)
+
+    
+
