@@ -22,3 +22,5 @@ train:
   early_stop_patience: 10
   epochs: 100
   init_method: normal
+  candidate_strategy: cand  # [cand, cand+rand, rand]
+  num_candidates: 50

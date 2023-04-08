@@ -1,4 +1,4 @@
-url: ./data_for_recstudio
+url: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio
 user_id_field: &u sess_id:token
 item_id_field: &i product_id:token
 rating_field: ~
@@ -34,6 +34,7 @@ network_feat_name: ~ #[[social.txt], [ml-100k.kg, ml-100k.link]]
 mapped_feat_field: [*u, *i]
 network_feat_field: [[[source_id:token, target_id:token]], [[head_id:token, tail_id:token, relation_id:token], [*i, entity_id:token]]]
 
-item_candidates_path: ~ # ./data_for_recstudio/item_candidates.ftr
+item_candidates_path: /root/autodl-tmp/huangxu/Amazon-KDDCUP-23/data_for_recstudio/co_graph_item_candidates.ftr
+# item_candidates_path: ~ # ./data_for_recstudio/item_candidates.ftr
 
 save_cache: True # whether to save processed dataset to cache.

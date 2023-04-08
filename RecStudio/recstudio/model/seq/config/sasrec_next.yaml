@@ -27,5 +27,7 @@ train:
   epochs: 100
   init_method: normal
   negative_count: 1
+  pretrained_embed_file: ~
+  # pretrained_embed_file: /root/autodl-tmp/huangxu/Amazon-KDDCUP-23/co-occurrence_graph/graph_emb_128.pkl
   # scheduler: onplateau
   # weight_decay: 1e-6

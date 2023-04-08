@@ -111,7 +111,10 @@ class SASRec_Next(basemodel.BaseRetriever):
         )
 
     def _get_item_encoder(self, train_data):
-        return torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
+        emb = torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
+        if self.config['train'].get("pretrained_embed_file", None) is not None:
+            self.load_pretrained_embedding(emb, train_data, self.config['train']['pretrained_embed_file'])
+        return emb
 
     def _get_score_func(self):
         r"""InnerProduct is used as the score function."""
@@ -132,6 +135,23 @@ class SASRec_Next(basemodel.BaseRetriever):
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
+
+    
+    def load_pretrained_embedding(self, embedding_layer, train_data, path: str):
+        import pickle
+        with open(path, 'rb') as f:
+            emb_ckpt = pickle.load(f)
+        
+        self.logger.info(f"Load item embedding from {path}.")
+        dataset_item_map = train_data.field2tokens[train_data.fiid]
+        ckpt_item_map = emb_ckpt['map']
+        id2id = torch.tensor([ckpt_item_map[i] if i!='[PAD]' else 0 for i in dataset_item_map ])
+        emb = emb_ckpt['embedding'][id2id].contiguous().data
+
+        assert emb.shape == embedding_layer.weight.shape
+        embedding_layer.weight.data = emb
+        torch.nn.init.constant_(embedding_layer.weight.data[embedding_layer.padding_idx], 0.)
+
 
     # def _get_sampler(self, train_data):
     #     r"""Uniform sampler is used as negative sampler."""
