@@ -46,6 +46,7 @@ train:
     learner: adam
     learning_rate: 0.001
     num_threads: 10
+    num_workers: 8
 
     # negative sampler configuration in training procedure
     # `method` describes the retrieving method used to retrieve negative items with a retriever.
@@ -59,6 +60,8 @@ train:
 
     # learning rate scheduler, refer to https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
     scheduler: ~    # [onplateau, exponential]
+    scheduler_patience: 2
+    scheduler_factor: 0.5
 
     seed: 2022  # random seed, usually 42 is a magic number
     weight_decay: 0.0      # weight decay for the optimizer
@@ -73,3 +76,4 @@ eval:
     test_metrics: [recall, precision, map, ndcg, mrr, hit]
     topk: 100
     save_path: './saved/'
+    num_workers: 8

@@ -270,7 +270,7 @@ def download_dataset(url: str, name: str, save_dir: str):
                 total_length = int(response.info().get('Content-Length'))
 
                 block_size=1024
-                t = tqdm(total=total_length, unit='iB', unit_scale=True)
+                t = tqdm(total=total_length, unit='iB', unit_scale=True, dynamic_ncols=True)
                 while True:
                     buffer = response.read(block_size)
                     if not buffer:

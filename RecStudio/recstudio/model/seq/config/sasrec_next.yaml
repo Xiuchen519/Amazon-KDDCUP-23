@@ -3,7 +3,7 @@ data:
   split_ratio: [1.0]
 
 eval:
-  batch_size: 512
+  batch_size: 1024
   predict_topk: 100
   test_metrics: [recall, precision, map, ndcg, mrr, hit]
   val_metrics: [mrr, recall, precision, ndcg]
@@ -23,9 +23,12 @@ model:
 
 train:
   batch_size: 1024
-  early_stop_patience: 5
+  early_stop_patience: 10
   epochs: 100
   init_method: normal
-  negative_count: 1
+  negative_count: ~
+  scheduler: onplateau
+  pretrained_embed_file: ~
+  # pretrained_embed_file: /root/autodl-tmp/huangxu/Amazon-KDDCUP-23/co-occurrence_graph/graph_emb_128.pkl
   # scheduler: onplateau
   # weight_decay: 1e-6
