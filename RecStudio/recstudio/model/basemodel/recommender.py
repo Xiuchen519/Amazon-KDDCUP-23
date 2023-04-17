@@ -22,7 +22,7 @@ from recstudio.utils import callbacks
 from recstudio.utils.utils import *
 from recstudio.data.dataset import (TripletDataset, CombinedLoaders)
 
-from lion_pytorch import Lion 
+# from lion_pytorch import Lion 
 
 class Recommender(torch.nn.Module, abc.ABC):
     def __init__(self, config: Dict = None, **kwargs):
@@ -284,10 +284,11 @@ class Recommender(torch.nn.Module, abc.ABC):
         predict_data.drop_feat(self.fields)
         test_loader = predict_data.prediction_loader(batch_size=self.config['eval']['batch_size'])      
         if model_path is None:
-            self.load_checkpoint(os.path.join(self.config['eval']['save_path'], self.ckpt_path))
+            path = os.path.join(self.config['eval']['save_path'], self.ckpt_path)
         else:
-            self.load_checkpoint(model_path)
-            self.logger.info(f'load checkpoint from {model_path}')
+            path = model_path
+        self.logger.info("Load checkpoint from {}".format(path))
+        self.load_checkpoint(path)
         if 'config' in kwargs:
             self.config.update(kwargs['config'])
 
@@ -578,8 +579,8 @@ class Recommender(torch.nn.Module, abc.ABC):
             optimizer = optim.SparseAdam(params, lr=learning_rate)
             # if self.weight_decay > 0:
             #    self.logger.warning('Sparse Adam cannot argument received argument [{weight_decay}]')
-        elif name.lower() == 'lion':
-            optimizer = Lion(params, lr=learning_rate, weight_decay=decay)
+        # elif name.lower() == 'lion':
+        #     optimizer = Lion(params, lr=learning_rate, weight_decay=decay)
         else:
             optimizer = optim.Adam(params, lr=learning_rate)
         return optimizer
@@ -699,7 +700,7 @@ class Recommender(torch.nn.Module, abc.ABC):
 
         for loader_idx, loader in enumerate(trn_dataloaders):
             outputs = []
-            for batch_idx, batch in tqdm(enumerate(loader), total=len(loader)):
+            for batch_idx, batch in tqdm(enumerate(loader), total=len(loader), dynamic_ncols=True):
                 # data to device
                 batch = self._to_device(batch, self._parameter_device)
 
@@ -756,7 +757,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             self._update_item_vector()
         output_list = []
 
-        for batch in tqdm(dataloader):
+        for batch in tqdm(dataloader, dynamic_ncols=True):
             # data to device
             batch = self._to_device(batch, self._parameter_device)
 
@@ -774,7 +775,7 @@ class Recommender(torch.nn.Module, abc.ABC):
 
         output_list = []
 
-        for batch in tqdm(dataloader):
+        for batch in tqdm(dataloader, dynamic_ncols=True):
             # data to device
             batch = self._to_device(batch, self._parameter_device)
 
@@ -813,7 +814,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             self._update_item_vector()
 
         res_df = pd.DataFrame({'locale' : [], 'next_item_prediction' : []})
-        for batch in tqdm(dataloader):
+        for batch in tqdm(dataloader, dynamic_ncols=True):
             # data to device
             batch = self._to_device(batch, self._parameter_device)
 
@@ -835,7 +836,7 @@ class Recommender(torch.nn.Module, abc.ABC):
 
         output_list = []
         res_df = pd.DataFrame({'locale' : [], 'candidates' : [], 'sess_id' : []})
-        for batch in tqdm(dataloader):
+        for batch in tqdm(dataloader, dynamic_ncols=True):
             # data to device
             batch = self._to_device(batch, self._parameter_device)
 

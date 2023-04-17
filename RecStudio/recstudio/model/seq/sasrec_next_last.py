@@ -7,9 +7,10 @@ from recstudio.model import basemodel, loss_func, module, scorer
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
-            self, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
+            self, last_weight, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
             bidirectional=False, training_pooling_type='last', eval_pooling_type='last') -> None:
         super().__init__()
+        self.last_weight = last_weight
         self.fiid = fiid
         self.item_encoder = item_encoder
         self.bidirectional = bidirectional
@@ -52,22 +53,29 @@ class SASRecQueryEncoder(torch.nn.Module):
             mask=attention_mask,
             src_key_padding_mask=mask4padding)  # BxLxD
 
+        
         if need_pooling:
             if self.training:
                 if self.training_pooling_type == 'mask':
-                    return self.training_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
+                    res = self.training_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
                 else:
-                    return self.training_pooling_layer(transformer_out, batch['seqlen'])
+                    res = self.training_pooling_layer(transformer_out, batch['seqlen'])
             else:
                 if self.eval_pooling_type == 'mask':
-                    return self.eval_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
+                    res = self.eval_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
                 else:
-                    return self.eval_pooling_layer(transformer_out, batch['seqlen'])
+                    res = self.eval_pooling_layer(transformer_out, batch['seqlen'])
         else:
-            return transformer_out
+            res = transformer_out
+        
+        # res : B x D
+        last_item = torch.gather(batch['in_'+self.fiid], dim=-1, index=(batch['seqlen'].unsqueeze(dim=-1) - 1)).squeeze() # [B]
+        last_emb = self.item_encoder(last_item) # B x D
+        res = last_emb * self.last_weight + (1 - self.last_weight) * res
+        return res         
 
 
-class SASRec_Next(basemodel.BaseRetriever):
+class SASRec_Next_Last(basemodel.BaseRetriever):
     r"""
     SASRec models user's sequence with a Transformer.
 
@@ -102,7 +110,7 @@ class SASRec_Next(basemodel.BaseRetriever):
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
         return SASRecQueryEncoder(
-            fiid=self.fiid, embed_dim=self.embed_dim,
+            last_weight=self.config['model']['last_weight'], fiid=self.fiid, embed_dim=self.embed_dim,
             max_seq_len=train_data.config['max_seq_len'], n_head=model_config['head_num'],
             hidden_size=model_config['hidden_size'], dropout=model_config['dropout_rate'],
             activation=model_config['activation'], layer_norm_eps=model_config['layer_norm_eps'],
@@ -111,10 +119,7 @@ class SASRec_Next(basemodel.BaseRetriever):
         )
 
     def _get_item_encoder(self, train_data):
-        emb = torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
-        if self.config['train'].get("pretrained_embed_file", None) is not None:
-            self.load_pretrained_embedding(emb, train_data, self.config['train']['pretrained_embed_file'])
-        return emb
+        return torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
 
     def _get_score_func(self):
         r"""InnerProduct is used as the score function."""
@@ -122,44 +127,18 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _get_loss_func(self):
         r"""Binary Cross Entropy is used as the loss function."""
-        if self.config['model']['loss_func'] == 'softmax':
+        if self.config['model']['softmax_loss'] == True:
             return loss_func.SoftmaxLoss()
-        elif self.config['model']['loss_func'] == 'sampled_softmax':
-            return loss_func.SampledSoftmaxLoss()
         else:
             return loss_func.BinaryCrossEntropyLoss()
 
     def _get_sampler(self, train_data):
         r"""Uniform sampler is used as negative sampler."""
-        if self.config['model']['loss_func'] == 'softmax':
+        if self.config['model']['softmax_loss'] == True:
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
 
-    
-    def load_pretrained_embedding(self, embedding_layer, train_data, path: str):
-        import pickle
-        with open(path, 'rb') as f:
-            emb_ckpt = pickle.load(f)
-        
-        self.logger.info(f"Load item embedding from {path}.")
-        dataset_item_map = train_data.field2tokens[train_data.fiid]
-        ckpt_item_map = emb_ckpt['map']
-        id2id = torch.tensor([ckpt_item_map[i] if i!='[PAD]' else 0 for i in dataset_item_map ])
-        emb = emb_ckpt['embedding'][id2id].contiguous().data
-
-        assert emb.shape == embedding_layer.weight.shape
-        embedding_layer.weight.data = emb
-        torch.nn.init.constant_(embedding_layer.weight.data[embedding_layer.padding_idx], 0.)
-
-
     # def _get_sampler(self, train_data):
     #     r"""Uniform sampler is used as negative sampler."""
     #     return None
-
-    # def candidate_topk(self, batch, k, user_h=None, return_query=False):
-    #     self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]
-    #     score, topk_items = super().topk(batch, k, user_h, return_query) # [B, 150]
-    #     topk_items = topk_items - 1 # [B, topk]
-    #     topk_items = torch.gather(batch['last_item_candidates'], dim=-1, index=topk_items)
-    #     return score, topk_items

@@ -7,7 +7,7 @@ from recstudio.model import basemodel, loss_func, module, scorer
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
-            self, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
+            self, use_gate, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
             bidirectional=False, training_pooling_type='last', eval_pooling_type='last') -> None:
         super().__init__()
         self.fiid = fiid
@@ -15,7 +15,7 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.bidirectional = bidirectional
         self.training_pooling_type = training_pooling_type
         self.eval_pooling_type = eval_pooling_type
-        self.position_emb = torch.nn.Embedding(max_seq_len, embed_dim)
+        self.position_emb = torch.nn.Embedding(max_seq_len + 1, embed_dim, padding_idx=0) # plus one for padding
         transformer_encoder = torch.nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=n_head,
@@ -34,10 +34,19 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.training_pooling_layer = module.SeqPoolingLayer(pooling_type=self.training_pooling_type)
         self.eval_pooling_layer = module.SeqPoolingLayer(pooling_type=self.eval_pooling_type)
 
+        # gate layer 
+        self.use_gate = use_gate
+        if self.use_gate:
+            self.gate_layer = torch.nn.Embedding(max_seq_len + 1, embed_dim, padding_idx=0) # plus one for padding
+
     def forward(self, batch, need_pooling=True):
         user_hist = batch['in_'+self.fiid]
-        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
-        positions = positions.unsqueeze(0).expand_as(user_hist)
+        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+        positions = positions.expand(user_hist.size(0), -1) # [B, L]
+        padding_pos = positions >= batch['seqlen'].unsqueeze(dim=-1) # [B, L]
+        positions = batch['seqlen'].unsqueeze(dim=-1) - positions # [B, L]
+        positions[padding_pos] = 0
+
         position_embs = self.position_emb(positions)
         seq_embs = self.item_encoder(user_hist)
 
@@ -47,8 +56,17 @@ class SASRecQueryEncoder(torch.nn.Module):
             attention_mask = torch.triu(torch.ones((L, L), dtype=torch.bool, device=user_hist.device), 1)
         else:
             attention_mask = torch.zeros((L, L), dtype=torch.bool, device=user_hist.device)
+
+        if self.use_gate:
+            gate_weight = self.gate_layer(positions) # [B, L, 1, D]
+            input_embs = (seq_embs + position_embs) # [B, L, D, 1]
+            gate_value = torch.sigmoid(torch.matmul(gate_weight.unsqueeze(dim=-2), input_embs.unsqueeze(dim=-1))).squeeze(dim=-1) # [B, L, 1, 1] -> [B, L, 1]
+            input_embs = input_embs * gate_value
+        else:
+            input_embs = (seq_embs + position_embs)
+
         transformer_out = self.transformer_layer(
-            src=self.dropout(seq_embs+position_embs),
+            src=self.dropout(input_embs),
             mask=attention_mask,
             src_key_padding_mask=mask4padding)  # BxLxD
 
@@ -67,7 +85,7 @@ class SASRecQueryEncoder(torch.nn.Module):
             return transformer_out
 
 
-class SASRec_Next(basemodel.BaseRetriever):
+class SASRec_Re(basemodel.BaseRetriever):
     r"""
     SASRec models user's sequence with a Transformer.
 
@@ -102,6 +120,7 @@ class SASRec_Next(basemodel.BaseRetriever):
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
         return SASRecQueryEncoder(
+            use_gate=model_config['use_gate'],
             fiid=self.fiid, embed_dim=self.embed_dim,
             max_seq_len=train_data.config['max_seq_len'], n_head=model_config['head_num'],
             hidden_size=model_config['hidden_size'], dropout=model_config['dropout_rate'],
@@ -111,10 +130,7 @@ class SASRec_Next(basemodel.BaseRetriever):
         )
 
     def _get_item_encoder(self, train_data):
-        emb = torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
-        if self.config['train'].get("pretrained_embed_file", None) is not None:
-            self.load_pretrained_embedding(emb, train_data, self.config['train']['pretrained_embed_file'])
-        return emb
+        return torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
 
     def _get_score_func(self):
         r"""InnerProduct is used as the score function."""
@@ -135,23 +151,6 @@ class SASRec_Next(basemodel.BaseRetriever):
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
-
-    
-    def load_pretrained_embedding(self, embedding_layer, train_data, path: str):
-        import pickle
-        with open(path, 'rb') as f:
-            emb_ckpt = pickle.load(f)
-        
-        self.logger.info(f"Load item embedding from {path}.")
-        dataset_item_map = train_data.field2tokens[train_data.fiid]
-        ckpt_item_map = emb_ckpt['map']
-        id2id = torch.tensor([ckpt_item_map[i] if i!='[PAD]' else 0 for i in dataset_item_map ])
-        emb = emb_ckpt['embedding'][id2id].contiguous().data
-
-        assert emb.shape == embedding_layer.weight.shape
-        embedding_layer.weight.data = emb
-        torch.nn.init.constant_(embedding_layer.weight.data[embedding_layer.padding_idx], 0.)
-
 
     # def _get_sampler(self, train_data):
     #     r"""Uniform sampler is used as negative sampler."""

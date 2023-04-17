@@ -1,4 +1,3 @@
-import dgl
 import random
 import pickle
 import torch as th 
@@ -38,10 +37,9 @@ def get_sessions(df: pd.DataFrame, id_dict: dict, use_last_item: bool=False, ori
     return all_item_id
 
 
-def get_pop_items(df: pd.DataFrame, pop_k: int):
-    item_counts = df['product_id'].value_counts(sort=True, ascending=False)
-    pop_item = item_counts.keys()[:pop_k].tolist()
-    return pop_item
+def get_pop_items(df: pd.DataFrame):
+    pop_counter = Counter(df['product_id'].tolist())
+    return pop_counter
 
 
 
@@ -55,7 +53,7 @@ class CoOccuGraph():
         self.graph = None
         self.pop_k = pop_k
         self.locale_sensitive = locale_sensitive
-        self.pop_items = None
+        self.pop_counter = None
         self.id2pid = {v: k for k,v in item_map.items()}
         # self.graph = self.construct_graph(self.train_sess_item_list, directional, verbose=True)
         pass
@@ -107,13 +105,12 @@ class CoOccuGraph():
         self.graph = adj_matrix.tocsr()
         self.directional = directional
         if self.locale_sensitive:
-            self.pop_items = {
-                locale: get_pop_items(train_df[train_df['locale']==locale], self.pop_k) 
-                for locale in train_df['locale'].unique()}
+            raise NotImplementedError("Not supported now.")
+            # self.pop_items = {
+            #     locale: get_pop_items(train_df[train_df['locale']==locale], self.pop_k) 
+            #     for locale in train_df['locale'].unique()}
         else:
-            global_pop_items = get_pop_items(train_df, self.pop_k)
-            self.pop_items = {
-                locale: global_pop_items for locale in train_df['locale'].unique()}
+            self.pop_counter = get_pop_items(train_df)
         print("Graph is built sucessfully.")
         return self.graph
 
@@ -179,6 +176,7 @@ class CoOccuGraph():
         else:
             iterator = enumerate(sess_id_list)
 
+        pop_k_items = list(dict(sorted(self.pop_counter.items(), key=lambda x: -x[1])).keys())[self.pop_k]
         res = []
         length = []
         for i, item in iterator:
@@ -190,8 +188,8 @@ class CoOccuGraph():
                 length.append(min(len(neighbors), k))
                 if len(neighbors) < k:
                     locale = sess_locale[i]
-                    pop_items = random.sample(self.pop_items[locale], k-len(neighbors))
-                    res.append([self.id2pid[x] for x in neighbors]+pop_items)
+                    pop_items = random.sample(pop_k_items, k-len(neighbors))
+                    res.append([self.id2pid[x] for x in neighbors] + pop_items)
                 else:
                     res.append([self.id2pid[x] for x in neighbors[:k]])
             else:
@@ -207,9 +205,10 @@ class CoOccuGraph():
         print(f'Graph data saved in {fname}.')
 
 
-    def add(self, graph: ssp.csr_matrix):
+    def add(self, graph):
         assert self.graph.shape == graph.shape, 'The shape of graph should be the same with the self.graph.'
-        self.graph = self.graph + graph
+        self.graph = self.graph + graph.graph
+        self.pop_counter = self.pop_counter + graph.pop_counter
     
 
     def load(self, fname: str):
@@ -228,23 +227,34 @@ if __name__ == "__main__":
     data_type = 'all'
     work_dir = "/root/autodl-tmp/huangxu/Amazon-KDDCUP-23/"
     train_df = pd.read_csv(os.path.join(work_dir, f"data_for_recstudio/{data_type}_task_1_train_inter_feat.csv"))
-    test_df = pd.read_csv(os.path.join(work_dir, f"data_for_recstudio/{data_type}_task_1_valid_inter_feat.csv"))
+    valid_df = pd.read_csv(os.path.join(work_dir, f"data_for_recstudio/{data_type}_task_1_valid_inter_feat.csv"))
+    test_df = pd.read_csv(os.path.join(work_dir, f"data_for_recstudio/test_inter_feat.csv"))
     product_df = pd.read_csv(os.path.join(work_dir, 'raw_data/products_train.csv'))
     item_map = { id: i+1 for i, id in enumerate(product_df['id'].unique()) }    # 0 saved for padding
 
     graph = CoOccuGraph(item_map, locale_sensitive=False)
 
-    if not os.path.exists(f'./graph_{data_type}.gph'):
-        graph.construct_graph(train_df)
-        test_graph = CoOccuGraph(item_map).construct_graph(test_df, use_last_item=False)
-        graph.graph = graph.graph + test_graph
-        graph.save(f'./graph_{data_type}.gph')
-    else:
-        graph.load(f'./graph_{data_type}.gph')
+    directional = True
 
-    pred_k = 50
+    if directional: 
+        graph_name = f"graph_{data_type}_directional.gph"
+    else:
+        graph_name = f"graph_{data_type}_undirectional.gph"
+
+    graph_file_path = os.path.join(work_dir, f'co-occurrence_graph/{graph_name}')
+    if not os.path.exists(graph_file_path):
+        graph.construct_graph(train_df, directional=directional)
+        valid_graph = CoOccuGraph(item_map).construct_graph(valid_df, use_last_item=True, directional=directional)
+        test_graph = CoOccuGraph(item_map).construct_graph(test_df, use_last_item=False, directional=directional)
+        graph.add(valid_graph)
+        graph.add(test_graph)
+        graph.save(graph_file_path)
+    else:
+        graph.load(graph_file_path)
+
+    pred_k = 100
     pred = graph.predict(test_df, k=pred_k, original_file=False)
-    pred.to_parquet(f'./pred_{data_type}_{pred_k}.parquet', engine='pyarrow')
+    pred.to_parquet(f'./pred_task1_{pred_k}.parquet', engine='pyarrow')
 
     # k = 50
     # item_neighbors = graph.generate_item_candidates(k=k)

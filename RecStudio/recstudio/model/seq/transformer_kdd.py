@@ -5,6 +5,8 @@ from recstudio.data import advance_dataset
 from recstudio.model import basemodel, loss_func
 from recstudio.model.module.layers import AttentionLayer, MLPModule, SeqPoolingLayer
 
+from recstudio.ann.sampler import UniformSampler
+
 
 
 class Transformer_KDD(basemodel.BaseRanker):
@@ -42,10 +44,15 @@ class Transformer_KDD(basemodel.BaseRanker):
             'sigmoid': torch.nn.Sigmoid()
         }))
 
+        self.sampler = UniformSampler(train_data.num_items)
 
     def score(self, batch):
-        item_seq = torch.cat((batch["in_" + self.fiid], batch[self.fiid].view(-1,1)), dim=-1)
-        seq_len = batch['seqlen'] + 1
+        item_seq = batch["in_" + self.fiid]
+        seq_len = batch['seqlen'] 
+        item_seq = torch.cat((item_seq, item_seq.new_zeros(item_seq.size(0),1)), dim=-1)
+        item_seq[ torch.arange(item_seq.size(0)), seq_len] = batch[self.fiid]
+        seq_len = seq_len + 1
+
         # positions = torch.arange(item_seq.size(1), dtype=torch.long, device=item_seq.device)
         # positions = positions.unsqueeze(0).expand_as(item_seq)
         positions = torch.arange(item_seq.size(1), dtype=torch.long, device=item_seq.device).unsqueeze(dim=0) # [1, L]
@@ -72,7 +79,24 @@ class Transformer_KDD(basemodel.BaseRanker):
     
 
     def forward(self, batch):
-        candidates = batch['last_item_candidates']
+        num_sample = self.config['train']['num_candidates']
+        all_candidates = batch['last_item_candidates']
+        if self.config['train']['candidate_strategy'] == 'cand':
+            num_candidates = all_candidates.size(1)
+            rand_idx = torch.randint(0, num_candidates, size=(all_candidates.size(0), num_sample), device=all_candidates.device)
+            candidates = torch.gather(all_candidates, -1, rand_idx)
+        elif self.config['train']['candidate_strategy'] == 'cand+rand':
+            num_candidates = all_candidates.size(1)
+            rand_idx = torch.randint(0, num_candidates, size=(all_candidates.size(0), num_sample // 2), device=all_candidates.device)
+            candidates = torch.gather(all_candidates, -1, rand_idx)
+            uni_cand = self.sampler.forward(all_candidates.size(0), num_sample - (num_sample // 2))[0].to(all_candidates.device)
+            candidates = torch.cat([candidates, uni_cand], dim=-1)
+        elif self.config['train']['candidate_strategy'] == 'rand':
+            candidates = self.sampler.forward(all_candidates.size(0), num_sample)
+        else:
+            raise ValueError("Not supported for such strategy.")
+        
+
         label_candidates = (candidates == batch[self.fiid].view(-1,1)).float()
         pos_score = self.score(batch)
         cand_scores = self.score_multi(batch, candidates)
