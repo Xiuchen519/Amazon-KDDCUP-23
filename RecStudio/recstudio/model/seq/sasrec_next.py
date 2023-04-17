@@ -95,9 +95,16 @@ class SASRec_Next(basemodel.BaseRetriever):
     def _get_dataset_class():
         r"""SeqDataset is used for SASRec."""
         return advance_dataset.KDDCUPSeqDataset
+
+    def _init_model(self, train_data, drop_unused_field=True):
+        super()._init_model(train_data, drop_unused_field)
+        self.item_fields = {'product_id'}
     
     def _set_data_field(self, data):
-        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
+        data.use_field = set(
+            [data.fuid, data.fiid, data.frating, 'locale', 
+             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
+        )
 
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
@@ -115,7 +122,10 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _get_score_func(self):
         r"""InnerProduct is used as the score function."""
-        return scorer.InnerProductScorer()
+        if self.config['model']['loss_func'] == 'ccl':
+            return scorer.CosineScorer()
+        else:
+            return scorer.InnerProductScorer()
 
     def _get_loss_func(self):
         r"""Binary Cross Entropy is used as the loss function."""
@@ -123,6 +133,8 @@ class SASRec_Next(basemodel.BaseRetriever):
             return loss_func.SoftmaxLoss()
         elif self.config['model']['loss_func'] == 'sampled_softmax':
             return loss_func.SampledSoftmaxLoss()
+        elif self.config['model']['loss_func'] == 'ccl':
+            return loss_func.CCLLoss(self.config['model']['negative_margin'], self.config['model']['negative_weight'])
         else:
             return loss_func.BinaryCrossEntropyLoss()
 

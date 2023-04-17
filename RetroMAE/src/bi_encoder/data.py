@@ -69,8 +69,8 @@ class TrainDatasetForBiE(Dataset):
             args: DataArguments,
             tokenizer: PreTrainedTokenizer
     ):
-        self.corpus_dataset = datasets.Dataset.load_from_disk(args.corpus_file)
         self.query_dataset = datasets.Dataset.load_from_disk(args.train_query_file)
+        self.corpus_dataset = datasets.Dataset.load_from_disk(args.corpus_file)
         self.train_qrels = read_train_file(args.train_qrels)
         self.corpus_id = read_mapping_id(args.corpus_id_file)
         self.query_id = read_mapping_id(args.train_query_id_file)

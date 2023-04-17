@@ -193,9 +193,9 @@ if __name__ == '__main__':
     # dev sessions 
     dev_sessions = train_sessions.sample(50000).reset_index(drop=True)
 
-    # save_corpus_as_json(product_data, './data/corpus.json', os.path.join(args.output_dir, 'corpus/mapping_id.txt'))
+    save_corpus_as_json(product_data, './data/corpus.json', os.path.join(args.output_dir, 'corpus/mapping_id.txt'))
 
-    save_corpus_as_json(UK_product_data, './data/UK_corpus.json', os.path.join(args.output_dir, 'UK_corpus/mapping_id.txt'))
+    # save_corpus_as_json(UK_product_data, './data/UK_corpus.json', os.path.join(args.output_dir, 'UK_corpus/mapping_id.txt'))
 
     # save_query_as_json(train_sessions, './data/train_query.json', os.path.join(args.output_dir, 'train_query/mapping_id.txt'), 
     #                    os.path.join(args.output_dir, 'train_qrels.txt'))
@@ -222,10 +222,10 @@ if __name__ == '__main__':
     corpus.save_to_disk(os.path.join(args.output_dir, 'corpus'))
     print('corpus dataset:', corpus)
 
-    UK_corpus = load_dataset('json', data_files='./data/UK_corpus.json', split='train')
-    UK_corpus = UK_corpus.map(tokenize_function, num_proc=8, remove_columns=["title"], batched=True)
-    UK_corpus.save_to_disk(os.path.join(args.output_dir, 'UK_corpus'))
-    print('UK corpus dataset:', UK_corpus)
+    # UK_corpus = load_dataset('json', data_files='./data/UK_corpus.json', split='train')
+    # UK_corpus = UK_corpus.map(tokenize_function, num_proc=8, remove_columns=["title"], batched=True)
+    # UK_corpus.save_to_disk(os.path.join(args.output_dir, 'UK_corpus'))
+    # print('UK corpus dataset:', UK_corpus)
 
     # train_query = load_dataset('json', data_files='./data/train_query.json', split='train')
     # train_query = train_query.map(tokenize_function, num_proc=8, remove_columns=["title_list"], batched=True)

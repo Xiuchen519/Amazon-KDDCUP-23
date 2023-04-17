@@ -1,11 +1,13 @@
+from typing import List
 import os 
 import copy
 import numpy as np 
 import pandas as pd 
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from recstudio.data.dataset import TripletDataset, SeqDataset, SeqToSeqDataset, TensorFrame, SessionDataset, SessionSliceDataset, DataSampler, DistributedSamplerWrapper
-from torch.utils.data import DataLoader, Dataset, Sampler
+from recstudio.data.dataset import TripletDataset, TensorFrame, SessionDataset, SessionSliceDataset, DataSampler
+from torch.utils.data import DataLoader, Dataset, Sampler, DistributedSampler
+from functools import partial
 
 from tqdm import tqdm 
 import logging 
@@ -15,6 +17,9 @@ from recstudio.utils import *
 from typing import *
 import pickle
 
+from transformers import PreTrainedTokenizer, AutoTokenizer
+from transformers.tokenization_utils_base import BatchEncoding
+from datasets import Dataset as TFDataset # transformer dataset 
 
 
 class ALSDataset(TripletDataset):
@@ -96,7 +101,67 @@ class ALSDataset(TripletDataset):
 # class SessionDataset(SeqDataset):
 #     r"""Dataset for session-based recommendation."""
 
+
+class KDDCupCollator:
+
+    def __init__(self, tokenizer) -> None:
+        self.tokenizer:PreTrainedTokenizer = tokenizer
+    
+    def __call__(self, batch) -> Any:
+        collated_batch = {}
+        for feat_key in batch[0].keys():
+            feat_list = []
+            for i in range(len(batch)):
+                feat_list.append(batch[i][feat_key])
+            if isinstance(feat_list[0], torch.Tensor):
+                feat_dim = feat_list[0].dim()
+                if feat_dim == 0: # float, collate them into a tensor with length B
+                    collated_batch[feat_key] = torch.tensor(feat_list)
+                elif feat_dim == 1:
+                    collated_batch[feat_key] = pad_sequence(feat_list, batch_first=True) # tensor, padding them to a same length
+            elif isinstance(feat_list[0], BatchEncoding): # list[BatchEncoding] single sentence 
+                collated_batch[feat_key] = self.tokenizer.pad(
+                                            feat_list, # list[BatchEncoding]
+                                            padding=True, 
+                                            return_tensors='pt'
+                                        )
+            elif isinstance(feat_list[0], list) and isinstance(feat_list[0][0], BatchEncoding): #  list[list[BatchEncoding]] multi sentences 
+                feat_list = sum(feat_list, [])
+                collated_batch[feat_key] = self.tokenizer.pad(
+                                            feat_list, # list[BatchEncoding]
+                                            padding=True, 
+                                            return_tensors='pt'
+                                        )
+        return collated_batch
+
+
 class KDDCUPSeqDataset(SessionSliceDataset):
+    
+    def __init__(self, name, data_dir, config: Union[Dict, str] = None, cache=False):
+    
+        if cache == False:
+            self.name = name
+
+            self.logger = logging.getLogger('recstudio')
+            self.config = config
+
+            if 'tokenizer' in self.config:
+                if isinstance(config['tokenizer'], str):
+                    self.tokenizer = AutoTokenizer.from_pretrained(config['tokenizer'])
+                elif isinstance(config['tokenizer'], PreTrainedTokenizer):
+                    self.tokenizer = config['tokenizer']
+
+            self._init_common_field()
+            self._load_all_data(data_dir, self.config['field_separator'])
+            # first factorize user id and item id, and then filtering to
+            # determine the valid user set and item set
+            self._filter(self.config['min_user_inter'],
+                            self.config['min_item_inter'])
+            self._map_all_ids()
+            self._post_preprocess()
+            
+            self._use_field = set([self.fuid, self.fiid, self.frating])
+        
 
     @classmethod
     def build_datasets(cls, name: str = 'ml-100k', specific_config: Union[Dict, str] = None):
@@ -127,7 +192,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
 
         cache_flag, data_dir = check_valid_dataset(name, config)
         if cache_flag:
-            logger.info("Load dataset from cache.")
+            logger.info(f"Load dataset from cache {data_dir}.")
             cache_datasets = _load_cache(data_dir)
             datasets = []
             for i in range(len(cache_datasets)):
@@ -194,7 +259,130 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         #    self.item_feat = self.item_feat[self.item_feat[self.fiid].isin(keep_items)]
         #    self.item_feat.reset_index(drop=True, inplace=True)
 
+
+    def _get_neg_data(self, data : Dict):
+        neg_id = torch.randint(0, self.num_items, (self.neg_count,)).long() # [neg]
+        neg_item_feat = self.item_feat[neg_id]
+        # negatives should be flatten here.
+        # After flatten and concat, the batch size will be B*(1+neg)
+        for k, v in neg_item_feat.items():
+            data['neg_' + k] = v # [neg] 
+
+        if 'title' in self.use_field:
+            locale_name = self.field2tokens['locale'][data['locale']]
+
+            data['neg_title_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
+            data['neg_title_input'] = [self.tokenizer.encode_plus(neg_title_ids, return_attention_mask=False, return_token_type_ids=False)
+                                       for neg_title_ids in data['neg_title_input']]
+            
+        # delete index in data
+        data_keys = list(data.keys())
+        for k in data_keys:
+            if 'index' in k:
+                del data[k]
+
+        return data
+
+
     def _get_pos_data(self, index):
+        # [start, end] both included
+        if getattr(self, 'predict_mode', False):
+            idx = self.data_index[index] # [3]
+            data = {self.fuid: idx[0]}
+            data.update(self.user_feat[data[self.fuid]])
+            start, end = idx[1], idx[2] 
+            lens = end - start + 1
+            data['seqlen'] = lens
+
+            # source_data
+            if not self.eval_mode:
+                l_source = torch.arange(start, end + 1) # should include the last item.
+            else:
+                l_source = torch.arange(start, end) # when eval, the last item should be excluded.
+            source_data = self.inter_feat[l_source] # [seq len]
+            source_data.update(self.item_feat[source_data[self.fiid]])
+            
+            if self.config['item_candidates_path'] is not None:
+                # candidate items data
+                last_item = self.inter_feat[end][self.fiid]
+                last_item_candidates = self.item_candidates_feat[last_item] 
+                data['last_item_candidates'] = last_item_candidates['candidates'] # [300]
+
+            if 'title' in self.use_field:
+                locale_name = self.field2tokens['locale'][source_data['locale'][0]]
+
+                source_data['title_input'] = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_input_ids = source_data['title_input'][0] 
+                for product_input_ids in source_data['title_input'][1 : ]:
+                    res_input_ids.append(self.tokenizer.sep_token_id)
+                    res_input_ids.extend(product_input_ids)
+                source_data['title_input'] = res_input_ids # List[int]
+                source_data['title_input'] = self.tokenizer.encode_plus(source_data['title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
+
+            for k, v in source_data.items():
+                if k != self.fuid:
+                    data['in_' + k] = v
+
+            # delete index in data
+            data_keys = list(data.keys())
+            for k in data_keys:
+                if 'index' in k:
+                    del data[k]
+
+            return data
+        else:
+            idx = self.data_index[index]
+            data = {self.fuid: idx[0]}
+            data.update(self.user_feat[data[self.fuid]])
+            start, end = idx[1], idx[2]
+            lens = end - start
+            data['seqlen'] = lens
+
+            # get source data 
+            l = torch.arange(start, end)
+            source_data = self.inter_feat[l]
+            source_data.update(self.item_feat[source_data[self.fiid]])
+
+            # get target data 
+            target_data = self.inter_feat[end]
+            target_data.update(self.item_feat[target_data[self.fiid]])
+            
+            if self.config['item_candidates_path'] is not None:
+                # candidate items data
+                last_item = self.inter_feat[end - 1][self.fiid] # the last one is ground truth
+                last_item_candidates = self.item_candidates_feat[last_item] 
+                data['last_item_candidates'] = last_item_candidates['candidates'] # [300]
+            
+            if 'title' in self.use_field:
+                locale_name = self.field2tokens['locale'][target_data['locale']]
+
+                source_data['title_input'] = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_input_ids = source_data['title_input'][0] 
+                for product_input_ids in source_data['title_input'][1 : ]:
+                    res_input_ids.append(self.tokenizer.sep_token_id)
+                    res_input_ids.extend(product_input_ids)
+                source_data['title_input'] = res_input_ids # List[int]
+                
+                target_data['title_input'] = self.title_feat[target_data[f'{locale_name}_index'].item()]['input_ids'] # List[int]
+
+                source_data['title_input'] = self.tokenizer.encode_plus(source_data['title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+                target_data['title_input'] = self.tokenizer.encode_plus(target_data['title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+                
+            for n, d in zip(['in_', ''], [source_data, target_data]):
+                for k, v in d.items():
+                    if k != self.fuid:
+                        data[n+k] = v
+            
+            # delete index in data
+            data_keys = list(data.keys())
+            for k in data_keys:
+                if 'index' in k:
+                    del data[k]
+            
+            return data
+
+    def _get_pos_data_2(self, index):
         # [start, end] both included
         if getattr(self, 'predict_mode', False):
             idx = self.data_index[index] # [B, 3]
@@ -275,16 +463,33 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             self.item_index_feat = pd.DataFrame(item_index_data)
             
             logger.info('start to create item index feat.')
-            # for i in tqdm(range(len(self.item_feat))):
-            #     product = self.item_feat.iloc[i]
-            #     product_id, product_locale_id = product[self.fiid], product['locale']
-            #     if product_id != 0 and product_locale_id != 0:
-            #         product_locale_name = self.field2tokens['locale'][product_locale_id]
-            #         self.item_index_feat.loc[product_id, f'{product_locale_name}_index'] = i
             for locale_name in tqdm(self.field2tokens['locale'][1:]):
                 locale_products = self.item_feat[self.item_feat['locale'] == self.field2token2idx['locale'][locale_name]]
                 self.item_index_feat.loc[locale_products[self.fiid], f'{locale_name}_index'] = locale_products.index
                 self.field2type[f'{locale_name}_index'] = 'int'
+            logger.info('item index feat is ready.')
+            
+            if hasattr(self, 'tokenizer'):
+                logger.info('********* start to create title feat ************')
+                def tokenize_function(examples, tokenizer, max_length):
+                    if 'title' in examples:
+                        return tokenizer(examples['title'], 
+                                        add_special_tokens=False, # don't add special tokens when preprocess
+                                        truncation=True, 
+                                        max_length=max_length,
+                                        return_attention_mask=False,
+                                        return_token_type_ids=False)
+                not_title_columns = []
+                for col in self.item_feat.columns:
+                    if 'product_id' not in col and 'title' not in col and 'locale' not in col:
+                        not_title_columns.append(col)
+                self.title_feat = self.item_feat.drop(columns=not_title_columns) # no inplace, original item_feat is keeped.
+                self.title_feat['title'][self.title_feat['title'] == ''] = self.tokenizer.unk_token
+                self.title_feat = TFDataset.from_pandas(self.title_feat, preserve_index=False)
+                self.title_feat = self.title_feat.map(partial(tokenize_function, tokenizer=self.tokenizer, max_length=self.config['max_title_len']), 
+                                                    num_proc=8, remove_columns=["title"], batched=True)
+                logger.info('********* title feat is ready ************')
+
 
             self.item_all_data = copy.deepcopy(self.item_feat)
             self.item_feat = self.item_index_feat
@@ -314,12 +519,6 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             self.item_candidates_feat['candidates'] = self.item_candidates_feat['candidates'].apply(lambda x: np.array([map_token_2_id(_) for _ in x]))
             
             # map item name in array into item id
-            # candidates_id_list = []
-            # for i in tqdm(range(len(self.item_candidates_feat))):
-            #     candidates_id = np.array(list(map(map_token_2_id, self.item_candidates_feat.iloc[i]['candidates'])))
-            #     # candidates_id = map((lambda x : self.field2token2idx[x]), self.item_candidates_feat.iloc[i]['candidates'])
-            #     candidates_id_list.append(candidates_id)
-            # self.item_candidates_feat['candidates'] = candidates_id_list
             max_candidates_len = self.item_candidates_feat['candidates'].apply(len).max()
 
             # reset id 
@@ -332,6 +531,26 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             # config field
             self.field2type['candidates'] = 'token_seq'
             self.field2maxlen['candidates'] = max_candidates_len
+
+    def __getitem__(self, index):
+        r"""Get data at specific index.
+
+        Args:
+            index(int): The data index.
+        Returns:
+            dict: A dict contains different feature.
+        """
+        data = self._get_pos_data(index)
+        if (self.eval_mode or self.predict_mode) and 'user_hist' not in data:
+            user_count = self.user_count[data[self.fuid]]
+            data['user_hist'] = self.user_hist[data[self.fuid]][:user_count]
+        else:
+            # Negative sampling in dataset.
+            # Only uniform sampling is supported now.
+            if getattr(self, 'neg_count', None) is not None:
+                if self.neg_count > 0:
+                    data = self._get_neg_data(data)
+        return data
 
     def dataframe2tensors(self):
         super().dataframe2tensors()
@@ -521,31 +740,71 @@ class KDDCUPSeqDataset(SessionSliceDataset):
     def get_locale_item_set(self, locale_name):
         item_all_feat_index = self.item_feat.get_col(f'{locale_name}_index')
         return torch.arange(self.num_items, dtype=torch.int)[item_all_feat_index != 0]
+
+    def loader(self, batch_size, shuffle=True, num_workers=8, drop_last=False, ddp=False):
+        # if not ddp:
+        # Don't use SortedSampler here, it may hurt the performence of the model.
+        if ddp:
+            sampler = DistributedSampler(self, shuffle=shuffle)
+            output = DataLoader(self, 
+                                batch_size=batch_size,
+                                sampler=sampler,
+                                shuffle=False,
+                                num_workers=num_workers,
+                                collate_fn=KDDCupCollator(getattr(self, 'tokenizer', None)))
+        else:
+            output = DataLoader(self, 
+                                batch_size=batch_size,
+                                shuffle=shuffle,
+                                num_workers=num_workers,
+                                collate_fn=KDDCupCollator(getattr(self, 'tokenizer', None)))
+        return output
     
-    def prediction_loader(self, batch_size, shuffle=False, num_workers=0, drop_last=False, ddp=False):
+    def train_loader(self, batch_size, shuffle=True, num_workers=8, drop_last=False, ddp=False):
+        return super().train_loader(batch_size, shuffle, num_workers, drop_last, ddp)
+
+    def prediction_loader(self, batch_size, shuffle=False, num_workers=8, drop_last=False, ddp=False):
         r"""Return a dataloader for prediction"""
         self.eval_mode = True 
         self.predict_mode = True # set mode to prediction.
-        return self.loader(batch_size, shuffle, num_workers, drop_last, ddp)
+        return self.loader(batch_size, False, num_workers, drop_last, ddp)
 
-    def eval_loader(self, batch_size, num_workers=0, ddp=False):
+    def eval_loader(self, batch_size, num_workers=8, ddp=False):
         self.eval_mode = True
-        if not getattr(self, 'fmeval', False):
-            # if ddp:
-            #     sampler = torch.utils.data.distributed.DistributedSampler(self, shuffle=False)
-            #     output = DataLoader(
-            #         self, sampler=sampler, batch_size=batch_size, num_workers=num_workers)
-            # else:
-            sampler = DataSampler(self, batch_size, shuffle=False, drop_last=False)
-            if ddp:
-                sampler = DistributedSamplerWrapper(sampler, shuffle=False)
-            output = DataLoader(
-                self, sampler=sampler, batch_size=None, shuffle=False,
-                num_workers=num_workers, persistent_workers=False)
-            return output
-        else:
-            self.eval_mode = True
-            return self.loader(batch_size, shuffle=False, num_workers=num_workers, ddp=ddp)
+        return self.loader(batch_size, shuffle=False, num_workers=num_workers, ddp=ddp)
+
+
+class KDDCUPSessionDataset(KDDCUPSeqDataset): # don't cut session into slice 
+
+    def _get_data_idx(self, splits):
+        # split: [start, train_end, valid_end, test_end]
+        splits, uids = splits 
+        maxlen = self.config['max_seq_len'] or (splits[:, -1] - splits[:, 0] - 1).max()
+
+        def get_slice(sps, uids, sp_idx):  
+            data = []
+            for i, sp in enumerate(sps): # val or test 
+                if sp[sp_idx] > sp[sp_idx - 1]:
+                    slice_end = sp[sp_idx] - 1
+                    slice_start = max(sp[sp_idx - 1], sp[sp_idx] - 1 - maxlen)
+                    data.append(np.array([uids[i], slice_start, slice_end]))
+            return np.array(data)
+
+        output = [get_slice(splits, uids, i) for i in range(1, splits.shape[-1])]
+        output = [torch.from_numpy(_) for _ in output]
+        return output
+
+    @property
+    def inter_feat_subset(self):
+        """self.data_index : [num_users, 3]
+        The intervel in data_index is both closed.
+        data_index only includes interactions in the truncated sequence of a user, instead of all interactions.
+        Return:
+            torch.tensor: the history index in inter_feat. shape: [num_interactions_in_train]
+        """
+        start = self.data_index[:, 1]
+        end = self.data_index[:, 2]
+        return torch.cat([torch.arange(s, e + 1, dtype=s.dtype) for s, e in zip(start, end)], dim=0)
     
 
 
