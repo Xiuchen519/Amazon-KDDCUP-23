@@ -463,7 +463,7 @@ class BaseRetriever(Recommender):
         if not with_score:
             prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens})
         else:
-            prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens, 'score' : score.cpu().tolist()})
+            prediction_df = pd.DataFrame({'locale' : locale_tokens, 'next_item_prediction' : topk_item_tokens, 'scores' : score.cpu().tolist()})
         return prediction_df
 
     
@@ -500,7 +500,7 @@ class BaseRetriever(Recommender):
         return prediction_df
     
 
-    def recall_candidates_step(self, batch, dataset:advance_dataset.KDDCUPDataset):
+    def recall_candidates_step(self, batch, dataset:advance_dataset.KDDCUPDataset, with_score):
         # get metric and cutoffs 
         eval_metric = self.config['eval']['test_metrics']
         cutoffs = self.config['eval']['cutoff'] if isinstance(self.config['eval']['cutoff'], list) else [self.config['eva']['cutoff']]
@@ -533,10 +533,25 @@ class BaseRetriever(Recommender):
         # sess id 
         sess_ids = batch[self.fuid]
         sess_tokens = dataset.field2tokens[self.fuid][sess_ids.cpu()].tolist()
-
-        candidates_df = pd.DataFrame({'sess_id' : sess_tokens, 'locale' : locale_tokens, 'candidates' : topk_item_tokens})
+        
+        if not with_score:
+            candidates_df = pd.DataFrame({'sess_id' : sess_tokens, 'locale' : locale_tokens, 'candidates' : topk_item_tokens})
+        else:
+            candidates_df = pd.DataFrame({'sess_id' : sess_tokens, 'locale' : locale_tokens, 'candidates' : topk_item_tokens, 'scores' : score.cpu().tolist()})
 
         return candidates_df, ({f"{name}@{cutoff}": func(label, pos_rating, cutoff) for cutoff in cutoffs for name, func in rank_m}, bs)
-
     
 
+    def filter_dirty_data_step(self, batch, dataset:advance_dataset.KDDCUPSeqDataset):
+        topk = self.config['eval']['topk']
+
+        score, topk_items = self.topk(batch, topk, None) # [B, topk], do not pass user hist in train
+        
+        next_item = batch[self.fiid] # [B] 
+        # in sasrec topk 
+        in_topk = (next_item.view(-1, 1) == topk_items).sum(dim=-1) > 0 # [B]
+        # in co graph candidates 
+        batch['last_item_candidates'] = batch['last_item_candidates'][:, :150]
+        in_candidates = (next_item.view(-1, 1) == batch['last_item_candidates']).sum(dim=-1) > 0 # [B]
+        clean_flag = torch.logical_or(in_topk, in_candidates).cpu().tolist()
+        return clean_flag

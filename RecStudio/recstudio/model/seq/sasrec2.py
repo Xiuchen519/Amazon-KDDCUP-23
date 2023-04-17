@@ -1,5 +1,6 @@
 import torch
-from recstudio.data import dataset, advance_dataset
+from RecStudio.recstudio.data import advance_dataset
+from recstudio.data import dataset
 from .sasrec import SASRec
 from recstudio.model import basemodel, loss_func, module, scorer
 r"""
