@@ -142,6 +142,7 @@ datasets/*
 .recstudio/
 /data_for_recstudio/*.csv
 /data_for_recstudio/*.ftr
+/data_for_recstudio/*.pkl
 /best_ckpt
 /predictions
 *.parquet
@@ -151,5 +152,14 @@ datasets/*
 *.ftr
 
 # RetroMAE
-data
+/RetroMAE/examples/retriever/kdd_cup/data
+/RetroMAE/examples/retriever/msmarco/data
+/RetroMAE/examples/retriever/kdd_cup/ckpt
+/RetroMAE/examples/retriever/msmarco/ckpt
+
+# running scripts
+scripts
+
+# ensemble
+/ensemble/*.npy
 

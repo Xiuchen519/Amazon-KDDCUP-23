@@ -1,4 +1,4 @@
-url: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/UK_data
+url: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/ES_data
 user_id_field: &u sess_id:token
 item_id_field: &i product_id:token
 rating_field: ~
@@ -6,8 +6,8 @@ time_field: &t timestamp:float
 time_format: ~
 
 encoding_method: utf-8
-inter_feat_name: UK_train_inter_feat.csv
-valid_inter_feat_name: UK_valid_inter_feat.csv
+inter_feat_name: ES_train_inter_feat.csv
+valid_inter_feat_name: ES_valid_inter_feat.csv
 inter_feat_field: [*u, *i, *t, locale:token]
 inter_feat_header: 0
 
@@ -15,9 +15,9 @@ user_feat_name: ~
 user_feat_field: ~
 user_feat_header: ~
 
-item_feat_name: [UK_processed_product_train.csv]
-# item_feat_field: [[*i, locale:token]]
-item_feat_field: [[*i, locale:token, title:str, price:float, brand:token, material:token, author:token, color:token_seq:"|"]]
+item_feat_name: [id_ES_product_train.csv]
+item_feat_field: [[*i, locale:token]]
+# item_feat_field: [[*i, locale:token, title:str, price:float, brand:str, color:str, size:str, model:token, material:str, author:str, desc:str]]
 item_feat_header: 0
 
 use_fields: ~
@@ -34,6 +34,6 @@ network_feat_name: ~ #[[social.txt], [ml-100k.kg, ml-100k.link]]
 mapped_feat_field: [*u, *i]
 network_feat_field: [[[source_id:token, target_id:token]], [[head_id:token, tail_id:token, relation_id:token], [*i, entity_id:token]]]
 
-item_candidates_path: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/candidates/UK/UK_item_candidates_150.parquet
+item_candidates_path: ~ #/root/autodl-tmp/huangxu/Amazon-KDDCUP-23/co-occurrence_graph/item_candidates.ftr
 
 save_cache: True # whether to save processed dataset to cache.

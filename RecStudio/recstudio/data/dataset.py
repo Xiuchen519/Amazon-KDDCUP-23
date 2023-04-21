@@ -78,7 +78,7 @@ class TripletDataset(Dataset):
 
         cache_flag, data_dir = check_valid_dataset(name, config)
         if cache_flag:
-            logger.info("Load dataset from cache.")
+            logger.info(f"Load dataset from cache {data_dir}")
             cache_datasets = _load_cache(data_dir)
             datasets = []
             for i in range(len(cache_datasets)):
@@ -1631,7 +1631,7 @@ class TensorFrame(Dataset):
                 seq_data = [torch.from_numpy(
                     d[:dataset.field2maxlen[field]]) for d in value]
                 data[field] = pad_sequence(seq_data, batch_first=True)
-            elif ftype == 'token' or ftype == 'int':
+            elif ftype == 'token':
                 data[field] = torch.from_numpy(
                     dataframe[field].to_numpy(np.int64))
             else:

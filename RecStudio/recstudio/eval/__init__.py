@@ -201,7 +201,8 @@ metric_dict = {
     'mse': M.mean_squared_error,
     'mae': M.mean_absolute_error,
     'auc': auc,
-    'logloss': logloss
+    'logloss': logloss,
+    'gauc': auc
 }
 
 
@@ -217,7 +218,7 @@ def get_rank_metrics(metric):
 def get_pred_metrics(metric):
     if not isinstance(metric, list):
         metric = [metric]
-    pred_metrics = {'mae', 'mse', 'auc', 'logloss'}
+    pred_metrics = {'mae', 'mse', 'auc', 'logloss', 'gauc'}
     pred_m = [(m, metric_dict[m])
               for m in metric if m in pred_metrics and m in metric_dict]
     return pred_m

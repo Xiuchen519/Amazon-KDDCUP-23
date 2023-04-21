@@ -13,8 +13,8 @@ class Transformer_KDD(basemodel.BaseRanker):
 
 
     def _set_data_field(self, data):
-        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
-
+        data.use_field = set([data.fuid, data.fiid, data.frating, 'locale', 'price', 'brand', 'material', 'author', 'color',
+                              'UK_index', 'JP_index', 'DE_index', 'ES_index', 'FR_index', 'IT_index'])
 
     def _get_dataset_class():
         r"""The dataset is SeqDataset."""
@@ -26,17 +26,34 @@ class Transformer_KDD(basemodel.BaseRanker):
         self.item_embedding = torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
         self.position_embedding = torch.nn.Embedding(train_data.config['max_seq_len'] + 2, self.embed_dim, padding_idx=0)
 
+        # price embedding
+        self.linear_price = torch.nn.Linear(1, self.embed_dim, bias=False)
+        self.norm_price = torch.nn.BatchNorm1d(self.embed_dim)
+        self.activate_price = torch.nn.ReLU()
+
+        # brand embedding 
+        self.brand_embedding = torch.nn.Embedding(train_data.num_values('brand'), self.embed_dim, padding_idx=0)
+
+        # material embedding 
+        self.material_embedding = torch.nn.Embedding(train_data.num_values('material'), self.embed_dim, padding_idx=0)
+
+        # author embedding 
+        self.author_embedding = torch.nn.Embedding(train_data.num_values('author'), self.embed_dim, padding_idx=0)
+
+        # color embedding 
+        self.color_embedding = torch.nn.Embedding(train_data.num_values('color'), self.embed_dim, padding_idx=0)
+
         trm_enc_layer = torch.nn.TransformerEncoderLayer(
-            self.embed_dim, nhead=model_conf['nhead'], dim_feedforward=model_conf['dim_feedforward'], 
+            self.embed_dim * 2, nhead=model_conf['nhead'], dim_feedforward=model_conf['dim_feedforward'], 
             dropout=model_conf['dropout'], activation=model_conf['activation'], batch_first=True)
         self.transformers = torch.nn.TransformerEncoder(trm_enc_layer, num_layers=model_conf['num_layers'])
         self.pooling_layer = SeqPoolingLayer('last')
 
         if model_conf['mlp_layer'] is None:
             self.mlp = None
-            layer_size = [self.embed_dim]
+            layer_size = [self.embed_dim * 2]
         else:
-            layer_size = [self.embed_dim] + model_conf['mlp_layer']
+            layer_size = [self.embed_dim * 2] + model_conf['mlp_layer']
             self.mlp = MLPModule(layer_size, activation_func='ReLU', dropout=model_conf['dropout'])
         
         self.pred = torch.nn.Sequential(OrderedDict({
@@ -46,12 +63,41 @@ class Transformer_KDD(basemodel.BaseRanker):
 
         self.sampler = UniformSampler(train_data.num_items)
 
+    def get_seq(self, batch, field_name):
+        seq_len = batch['seqlen']
+        field_seq = batch['in_' + field_name]
+        field_shape = list(field_seq.shape)
+        field_shape[1] = 1
+        field_seq = torch.cat((field_seq, field_seq.new_zeros(*field_shape)), dim=1) # [B, L + 1] or [B, L + 1, N]
+        field_seq[torch.arange(field_seq.size(0)), seq_len] = batch[field_name] 
+
+        return field_seq
+
     def score(self, batch):
         item_seq = batch["in_" + self.fiid]
         seq_len = batch['seqlen'] 
         item_seq = torch.cat((item_seq, item_seq.new_zeros(item_seq.size(0),1)), dim=-1)
-        item_seq[ torch.arange(item_seq.size(0)), seq_len] = batch[self.fiid]
+        item_seq[torch.arange(item_seq.size(0)), seq_len] = batch[self.fiid]
         seq_len = seq_len + 1
+
+        # feature embeddings
+        brand_seq = self.get_seq(batch, 'brand')
+        material_seq = self.get_seq(batch, 'material')
+        author_seq = self.get_seq(batch, 'author')
+        price_seq = self.get_seq(batch, 'price')
+
+        brand_emb = self.brand_embedding(brand_seq) # [B, L + 1, D]
+        material_emb = self.material_embedding(material_seq) # [B, L + 1, D]
+        author_emb = self.author_embedding(author_seq) # [B, L + 1, D]
+        price_emb = self.linear_price(price_seq.unsqueeze(dim=-1)) # [B, L + 1, D]
+        price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
+
+        color_seq = self.get_seq(batch, 'color') # [B, L + 1, N]
+        color_num_seq = self.get_seq(batch, 'color_num') # [B, L + 1]
+        color_num_seq[color_num_seq == 0] = 1
+        color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, L + 1, N, D] -> [B, L + 1, D]
+
+        feature_emb = brand_emb + material_emb + author_emb + price_emb + color_emb # [B, L + 1, D]
 
         # positions = torch.arange(item_seq.size(1), dtype=torch.long, device=item_seq.device)
         # positions = positions.unsqueeze(0).expand_as(item_seq)
@@ -65,7 +111,9 @@ class Transformer_KDD(basemodel.BaseRanker):
         seq_emb = self.item_embedding(item_seq)
         padding_mask = item_seq == 0
 
-        tfm_out = self.transformers(src=seq_emb+position_embs, src_key_padding_mask=padding_mask)
+        seq_emb = seq_emb + position_embs 
+        input_emb = torch.cat([seq_emb, feature_emb], dim=-1) # [B, L + 1, 2 * D]
+        tfm_out = self.transformers(src=input_emb, src_key_padding_mask=padding_mask)
         out = self.pooling_layer(tfm_out, batch['seqlen'])
 
         if self.mlp is not None:

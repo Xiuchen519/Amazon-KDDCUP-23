@@ -1,0 +1,25 @@
+data:
+  split_mode: user
+  split_ratio: [1.0]
+
+eval:
+  batch_size: 1024
+  predict_topk: 100
+  cutoff: [100]
+  test_metrics: [mrr, gauc, auc, logloss]
+  val_metrics: [mrr, gauc, auc, logloss]
+
+model:
+  activation: dice
+  attention_mlp: [128, 64]
+  batch_norm: False
+  dropout: 0.3
+  embed_dim: 64
+  fc_mlp: [256, 256, 256]
+
+train:
+  batch_size: 1024
+  negative_count: 20
+  candidate_strategy: cand  # [cand, cand+rand, rand]
+  num_candidates: 100
+

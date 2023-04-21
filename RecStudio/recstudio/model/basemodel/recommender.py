@@ -483,7 +483,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             if len(self.item_fields) == 1:
                 return data
             else:
-                return self.item_feat[data]
+                return self._to_device(self.item_feat[data], self._parameter_device)
 
     def _get_train_loaders(self, train_data, ddp=False) -> List:
         # TODO: modify loaders in model

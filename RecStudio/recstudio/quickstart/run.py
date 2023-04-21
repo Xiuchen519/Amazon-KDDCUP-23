@@ -123,10 +123,16 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
     
 
     data_dir = "/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio"
-    prediction_inter_feat_DE_path = os.path.join(data_dir, 'test_inter_feat_task1_DE.csv')
-    prediction_inter_feat_JP_path = os.path.join(data_dir, 'test_inter_feat_task1_JP.csv')
-    prediction_inter_feat_UK_path = os.path.join(data_dir, 'test_inter_feat_task1_UK.csv')
+    # prediction for task1
+    prediction_inter_feat_DE_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_DE.csv')
+    prediction_inter_feat_JP_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_JP.csv')
+    prediction_inter_feat_UK_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_UK.csv')
     task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
+
+    # prediction for task3
+    task3_prediction_inter_feat_path = os.path.join(data_dir, 'task3_data/test_inter_feat_task3.csv')
+    task3_prediction_inter_feat_list = [task3_prediction_inter_feat_path]
+
     if do_prediction == True:
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         # init model 
@@ -135,7 +141,11 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
         model._accelerate()
 
         res_dfs = []
-        for pred_path in task1_prediction_inter_feat_list:
+        if args.test_task == 'task1':
+            prediction_inter_feat_list = task1_prediction_inter_feat_list
+        elif args.test_task == 'task3':
+            prediction_inter_feat_list = task3_prediction_inter_feat_list
+        for pred_path in prediction_inter_feat_list:
             predict_dataset = datasets[0].build_test_dataset(pred_path)
             res_df = model.predict(predict_dataset, model_path=model_path, with_score=args.with_score)
             res_dfs.append(res_df)
@@ -178,7 +188,11 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
 
         prediction_path = os.path.join('./predictions', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         res_dfs = []
-        for pred_path in task1_prediction_inter_feat_list:
+        if args.test_task == 'task1':
+            prediction_inter_feat_list = task1_prediction_inter_feat_list
+        elif args.test_task == 'task3':
+            prediction_inter_feat_list = task3_prediction_inter_feat_list
+        for pred_path in prediction_inter_feat_list:
             predict_dataset = datasets[0].build_test_dataset(pred_path)
             res_df = model.predict(predict_dataset, with_score=args.with_score)
             res_dfs.append(res_df)
@@ -193,6 +207,8 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
 
         # predict_dataset = datasets[0].build_test_dataset(prediction_inter_feat_path)
         # model.predict(predict_dataset, prediction_path)
+
+
 
 def kdd_cup_filter_train(model: str, dataset: str, args, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True,
             do_prediction=False, do_evaluate=False, model_path=None, **kwargs):
