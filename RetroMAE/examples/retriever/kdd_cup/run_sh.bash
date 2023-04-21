@@ -1,0 +1,19 @@
+CUDA_VISIBLE_DEVICES=5,6,7 python -m torch.distributed.launch \
+ --nproc_per_node=3 \
+ -m bi_encoder.run \
+ --output_dir=./ckpt/04051843 \
+ --model_name_or_path=Shitao/RetroMAE_MSMARCO \
+ --do_train \
+ --corpus_file=./data/BertTokenizer_data/UK_corpus \
+ --train_query_file=./data/BertTokenizer_data/train_UK_query \
+ --train_qrels=./data/BertTokenizer_data/train_UK_qrels.txt \
+ --query_max_len=260 \
+ --passage_max_len=50 \
+ --fp16 \
+ --per_device_train_batch_size=35 \
+ --train_group_size=16 \
+ --sample_neg_from_topk=200 \
+ --learning_rate=2e-5 \
+ --num_train_epochs=4 \
+ --negatives_x_device \
+ --dataloader_num_workers=6 

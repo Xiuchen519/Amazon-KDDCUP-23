@@ -153,6 +153,7 @@ datasets/*
 
 # RetroMAE
 /RetroMAE/examples/retriever/kdd_cup/data
+/RetroMAE/examples/retriever/kdd_cup/kdd_cup_results
 /RetroMAE/examples/retriever/msmarco/data
 /RetroMAE/examples/retriever/kdd_cup/ckpt
 /RetroMAE/examples/retriever/msmarco/ckpt
@@ -163,3 +164,6 @@ scripts
 # ensemble
 /ensemble/*.npy
 
+# text method 
+/text_method/roberta_results
+/text_method/ckpt

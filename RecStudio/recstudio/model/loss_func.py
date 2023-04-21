@@ -169,7 +169,7 @@ class NCELoss(PairwiseLoss):
 
 
 class CCLLoss(PairwiseLoss):
-    def __init__(self, margin=0.8, neg_weight=0.3) -> None:
+    def __init__(self, margin=0.8, neg_weight=250) -> None:
         super().__init__()
         self.margin = margin
         self.neg_weight = neg_weight
@@ -177,11 +177,10 @@ class CCLLoss(PairwiseLoss):
     def forward(self, label, pos_score, log_pos_prob, neg_score, log_neg_prob):
         # pos_score: [B,] or [B, N]
         # neg_score: [B, num_neg] or [B, N, num_neg]
-        pos_score = torch.sigmoid(pos_score)
-        neg_score = torch.sigmoid(neg_score)
-        neg_score_mean = torch.mean(torch.relu(neg_score - self.margin), dim=-1)  # [B] or [B,N]
+        num_neg = neg_score.shape[-1]
+        neg_score_sum = torch.sum(torch.relu(neg_score - self.margin), dim=-1)  # [B] or [B,N]
         notpadnum = torch.logical_not(torch.isinf(pos_score)).float().sum()
-        loss = (1 - pos_score) + self.neg_weight * neg_score_mean
+        loss = (1 - pos_score) + self.neg_weight / num_neg * neg_score_sum
         loss = torch.nan_to_num(loss, posinf=0.0)
         return loss.sum() / notpadnum
 
