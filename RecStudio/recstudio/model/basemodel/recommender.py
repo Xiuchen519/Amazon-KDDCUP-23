@@ -930,7 +930,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         self.logger.info("Best model checkpoint saved in {}.".format(best_ckpt_path))
 
     def load_checkpoint(self, path: str) -> None:
-        ckpt = torch.load(path)
+        ckpt = torch.load(path, map_location=self._parameter_device)
         
         self.config['model'] = ckpt['config']['model']
 

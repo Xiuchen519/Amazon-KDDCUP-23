@@ -16,10 +16,13 @@ model:
   dropout: 0.3
   embed_dim: 64
   fc_mlp: [256, 256, 256]
+  use_product_feature: 1
+  use_color: 1
+  use_price: 0
 
 train:
   batch_size: 1024
   negative_count: 20
   candidate_strategy: cand  # [cand, cand+rand, rand]
-  num_candidates: 100
+  num_candidates: 50
 

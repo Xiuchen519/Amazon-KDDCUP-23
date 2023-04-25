@@ -313,6 +313,14 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                     source_color_num = (source_data['color'] != 0).sum(dim=-1) # [L]
                     source_data['color_num'] = source_color_num # [L]
 
+            elif locale_name == '[PAD]':
+                source_all_item_indices = torch.zeros(data['seqlen'], dtype=torch.int64)
+                source_data.update(self.item_all_data[source_all_item_indices])
+
+                if 'color' in self.use_field:
+                    source_color_num = (source_data['color'] != 0).sum(dim=-1) # [L]
+                    source_data['color_num'] = source_color_num # [L]
+
             
             if self.config['item_candidates_path'] is not None:
                 # candidate items data
@@ -367,6 +375,20 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                 source_data.update(self.item_all_data[source_all_item_indices])
 
                 target_all_item_indices = target_data[f'{locale_name}_index'].to(torch.int64)
+                target_data.update(self.item_all_data[target_all_item_indices.item()])
+
+                if 'color' in self.use_field:
+                    source_color_num = (source_data['color'] != 0).sum(dim=-1) # [L]
+                    source_data['color_num'] = source_color_num # [L]
+
+                    target_color_num = (target_data['color'] != 0).sum()
+                    target_data['color_num'] = target_color_num  # [] scalar
+
+            elif locale_name == '[PAD]':
+                source_all_item_indices = torch.zeros(data['seqlen'], dtype=torch.int64)
+                source_data.update(self.item_all_data[source_all_item_indices])
+
+                target_all_item_indices = torch.zeros(1, dtype=torch.int64)
                 target_data.update(self.item_all_data[target_all_item_indices.item()])
 
                 if 'color' in self.use_field:
@@ -572,6 +594,29 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             self.field2type['candidates'] = 'token_seq'
             self.field2maxlen['candidates'] = max_candidates_len
 
+    
+    def _get_feat_list(self):
+        # if we have more features, please add here
+        feat_list = [self.inter_feat, self.user_feat, self.item_feat]
+        if self.config['network_feat_name'] is not None:
+            feat_list.extend(self.network_feat)
+        # return list(feat for feat in feat_list if feat is not None)
+        return feat_list
+
+    def drop_feat(self, keep_fields):
+        feat_list = self._get_feat_list()
+        if hasattr(self, 'item_all_data'):
+            feat_list.append(self.item_all_data)
+        if keep_fields is not None and len(keep_fields) > 0:
+            fields = set(keep_fields)
+            fields.add(self.frating)
+            for feat in feat_list:
+                feat.del_fields(fields)
+            # if 'user_hist' in fields:
+            #     self.user_feat.add_field('user_hist', self.user_hist) # user_hist is not added here to reduce space 
+            if 'item_hist' in fields:
+                self.item_feat.add_field('item_hist', self.get_hist(False))
+
     def __getitem__(self, index):
         r"""Get data at specific index.
 
@@ -581,10 +626,17 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             dict: A dict contains different feature.
         """
         data = self._get_pos_data(index)
-        if (self.eval_mode or self.predict_mode) and 'user_hist' not in data:
-            user_count = self.user_count[data[self.fuid]]
-            data['user_hist'] = self.user_hist[data[self.fuid]][:user_count]
-        else:
+        if (self.eval_mode or self.predict_mode): 
+            if 'user_hist' not in data:
+                user_count = self.user_count[data[self.fuid]]
+                data['user_hist'] = self.user_hist[data[self.fuid]][:user_count]
+        
+        if (not self.eval_mode and not self.predict_mode):
+
+            if 'user_hist' in self.use_field and 'user_hist' not in data: # add user_hist here
+                user_count = self.user_count[data[self.fuid]]
+                data['user_hist'] = self.user_hist[data[self.fuid]][:user_count]
+
             # Negative sampling in dataset.
             # Only uniform sampling is supported now.
             if getattr(self, 'neg_count', None) is not None:
@@ -802,15 +854,18 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         return output
     
     def train_loader(self, batch_size, shuffle=True, num_workers=8, drop_last=False, ddp=False):
-        return super().train_loader(batch_size, shuffle, num_workers, drop_last, ddp)
+        self.predict_mode = False # set mode to training.
+        self.eval_mode = False 
+        return self.loader(batch_size, shuffle, num_workers, drop_last, ddp)
 
     def prediction_loader(self, batch_size, shuffle=False, num_workers=8, drop_last=False, ddp=False):
         r"""Return a dataloader for prediction"""
-        self.eval_mode = True 
         self.predict_mode = True # set mode to prediction.
+        self.eval_mode = False # no eval mode 
         return self.loader(batch_size, False, num_workers, drop_last, ddp)
 
     def eval_loader(self, batch_size, num_workers=8, ddp=False):
+        self.predict_mode = False
         self.eval_mode = True
         return self.loader(batch_size, shuffle=False, num_workers=num_workers, ddp=ddp)
 

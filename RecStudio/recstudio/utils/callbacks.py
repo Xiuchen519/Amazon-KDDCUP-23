@@ -81,7 +81,7 @@ class EarlyStopping(object):
                     _file_name = os.path.basename(handler.baseFilename).split('.')[0]
             if _file_name is None:
                 import time
-                _file_name = time.strftime(f"{self.model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.log", time.localtime())
+                _file_name = time.strftime(f"{self.model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S", time.localtime())
             self._best_ckpt_path = f"{self.model_name}/{dataset_name}/{_file_name}.ckpt"
         self.__check_save_dir()
 
@@ -125,6 +125,8 @@ class EarlyStopping(object):
         self.best_ckpt['parameters'] = copy.deepcopy(model._get_ckpt_param())
         self.best_ckpt['metric'] = value
         self.best_ckpt['epoch'] = epoch
+        # save best_ckpt 
+        self.save_checkpoint(epoch)
 
     def save_checkpoint(self, epoch): # TODO haddle saving checkpoint in ddp
         if self.save_dir is not None:
