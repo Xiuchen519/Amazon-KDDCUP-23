@@ -1,4 +1,5 @@
 import torch
+from typing import Dict
 from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import functional as recfn
@@ -7,17 +8,20 @@ from recstudio.model import basemodel, loss_func, module, scorer
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
-            self, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
-            bidirectional=False, training_pooling_type='last', eval_pooling_type='last') -> None:
+            self, train_data, model_config, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
+            bidirectional=False, training_pooling_type='last', eval_pooling_type='last', use_product_feature=False) -> None:
         super().__init__()
         self.fiid = fiid
+        self.use_fields = train_data.use_field
+        self.model_config = model_config
         self.item_encoder = item_encoder
         self.bidirectional = bidirectional
         self.training_pooling_type = training_pooling_type
         self.eval_pooling_type = eval_pooling_type
-        self.position_emb = torch.nn.Embedding(max_seq_len, embed_dim)
+        self.use_product_feature = use_product_feature
+        self.position_emb = torch.nn.Embedding(max_seq_len, 2*embed_dim if use_product_feature else embed_dim)
         transformer_encoder = torch.nn.TransformerEncoderLayer(
-            d_model=embed_dim,
+            d_model=2*embed_dim if use_product_feature else embed_dim,
             nhead=n_head,
             dim_feedforward=hidden_size,
             dropout=dropout,
@@ -34,12 +38,75 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.training_pooling_layer = module.SeqPoolingLayer(pooling_type=self.training_pooling_type)
         self.eval_pooling_layer = module.SeqPoolingLayer(pooling_type=self.eval_pooling_type)
 
+        if self.use_product_feature:
+            # price embedding
+            if self.model_config['use_price']:
+                self.linear_price = torch.nn.Linear(1, embed_dim, bias=False)
+                self.norm_price = torch.nn.BatchNorm1d(embed_dim)
+                self.activate_price = torch.nn.ReLU()
+            # brand embedding 
+            self.brand_embedding = torch.nn.Embedding(train_data.num_values('brand'), embed_dim, padding_idx=0)
+            # material embedding 
+            self.material_embedding = torch.nn.Embedding(train_data.num_values('material'), embed_dim, padding_idx=0)
+            # author embedding 
+            self.author_embedding = torch.nn.Embedding(train_data.num_values('author'), embed_dim, padding_idx=0)
+            # color embedding 
+            if self.model_config['use_color']:
+                self.color_embedding = torch.nn.Embedding(train_data.num_values('color'), embed_dim, padding_idx=0)
+
+            self.fc_layer = torch.nn.Linear(2 * embed_dim, embed_dim)
+
+    def get_feature_emb(self, batch, is_target=False):
+        if not is_target:
+            brand_emb = self.brand_embedding(batch['in_brand']) # [B, L, D]
+            material_emb = self.material_embedding(batch['in_material']) # [B, L, D]
+            author_emb = self.author_embedding(batch['in_author']) # [B, L, D]
+            feature_emb = brand_emb + material_emb + author_emb # [B, L, D]                    
+
+            if 'price' in self.use_fields:
+                price_emb = self.linear_price(batch['in_price'].unsqueeze(dim=-1)) # [B, L, D]
+                price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
+                feature_emb += price_emb
+
+            if 'color' in self.use_fields:
+                color_seq = batch['in_color'] # [B, L, N]
+                color_num_seq = batch['in_color_num'] # [B, L]
+                color_num_seq[color_num_seq == 0] = 1
+                color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, L, N, D] -> [B, L, D]
+                feature_emb += color_emb 
+
+        else:
+            brand_emb = self.brand_embedding(batch['brand']) # [B, D]
+            material_emb = self.material_embedding(batch['material']) # [B, D]
+            author_emb = self.author_embedding(batch['author']) # [B, D]
+            feature_emb = brand_emb + material_emb + author_emb
+
+            if 'price' in self.use_fields:
+                price_emb = self.linear_price(batch['price'].unsqueeze(dim=-1)) # [B, D]
+                price_emb = self.activate_price(self.norm_price(price_emb)) # [B, D]
+                feature_emb += price_emb
+
+            if 'color' in self.use_fields:
+                color_seq = batch['color'] # [B, N]
+                color_num_seq = batch['color_num'] # [B]
+                color_num_seq[color_num_seq == 0] = 1
+                color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, N, D] -> [B, D]
+                feature_emb += color_emb  
+
+        return feature_emb
+
     def forward(self, batch, need_pooling=True):
         user_hist = batch['in_'+self.fiid]
         positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
         positions = positions.unsqueeze(0).expand_as(user_hist)
         position_embs = self.position_emb(positions)
         seq_embs = self.item_encoder(user_hist)
+
+        if self.use_product_feature:
+            feature_embs = self.get_feature_emb(batch, is_target=False) # [B, L, D]
+            input_embs = torch.concat([seq_embs, feature_embs], dim=-1) + position_embs # [B, L, 2 * D]
+        else:
+            input_embs = seq_embs + position_embs # [B, L, D]
 
         mask4padding = user_hist == 0  # BxL
         L = user_hist.size(-1)
@@ -48,26 +115,28 @@ class SASRecQueryEncoder(torch.nn.Module):
         else:
             attention_mask = torch.zeros((L, L), dtype=torch.bool, device=user_hist.device)
         transformer_out = self.transformer_layer(
-            src=self.dropout(seq_embs+position_embs),
+            src=self.dropout(input_embs),
             mask=attention_mask,
             src_key_padding_mask=mask4padding)  # BxLxD
 
         if need_pooling:
             if self.training:
                 if self.training_pooling_type == 'mask':
-                    return self.training_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
+                    transformer_out = self.training_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
                 else:
-                    return self.training_pooling_layer(transformer_out, batch['seqlen'])
+                    transformer_out = self.training_pooling_layer(transformer_out, batch['seqlen'])
             else:
                 if self.eval_pooling_type == 'mask':
-                    return self.eval_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
+                    transformer_out = self.eval_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
                 else:
-                    return self.eval_pooling_layer(transformer_out, batch['seqlen'])
+                    transformer_out = self.eval_pooling_layer(transformer_out, batch['seqlen'])
         else:
-            return transformer_out
+            transformer_out = transformer_out
+        
+        return self.fc_layer(transformer_out)
 
 
-class SASRec_Next(basemodel.BaseRetriever):
+class SASRec_Next_Feat(basemodel.BaseRetriever):
     r"""
     SASRec models user's sequence with a Transformer.
 
@@ -91,6 +160,9 @@ class SASRec_Next(basemodel.BaseRetriever):
     #     parent_parser.add_argument("--dropout_rate", type=float, default=0.5, help='dropout rate')
     #     parent_parser.add_argument("--negative_count", type=int, default=1, help='negative sampling numbers')
     #     return parent_parser
+    def __init__(self, config: Dict = None, **kwargs):
+        super().__init__(config, **kwargs)
+        self.use_product_feature = self.config['model']['use_product_feature']
 
     def _get_dataset_class():
         r"""SeqDataset is used for SASRec."""
@@ -98,23 +170,35 @@ class SASRec_Next(basemodel.BaseRetriever):
 
     def _init_model(self, train_data, drop_unused_field=True):
         super()._init_model(train_data, drop_unused_field)
-        self.item_fields = {train_data.fiid}
-    
+        self.item_fields = {train_data.fiid} # only use product id as item feature, other product features are used in query feature.
+
     def _set_data_field(self, data):
-        data.use_field = set(
-            [data.fuid, data.fiid, data.frating, 'locale', 
-             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
-        )
+        if self.use_product_feature:
+            use_field = set([data.fuid, data.fiid, data.frating, 'locale', 'brand', 'material', 'author',
+                             'UK_index', 'JP_index', 'DE_index', 'ES_index', 'FR_index', 'IT_index'])
+            if self.config['model']['use_color']:
+                use_field.add('color')
+            if self.config['model']['use_price']:
+                use_field.add('price')
+            data.use_field = use_field
+        else:
+            data.use_field = set([data.fuid, data.fiid, data.frating, 'locale',
+                                  'UK_index', 'JP_index', 'DE_index', 'ES_index', 'FR_index', 'IT_index'])
+
+    def _get_query_feat(self, data):
+        return data
 
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
         return SASRecQueryEncoder(
+            train_data=train_data, model_config=model_config,
             fiid=self.fiid, embed_dim=self.embed_dim,
             max_seq_len=train_data.config['max_seq_len'], n_head=model_config['head_num'],
             hidden_size=model_config['hidden_size'], dropout=model_config['dropout_rate'],
             activation=model_config['activation'], layer_norm_eps=model_config['layer_norm_eps'],
             n_layer=model_config['layer_num'],
-            item_encoder=self.item_encoder
+            item_encoder=self.item_encoder,
+            use_product_feature=self.use_product_feature
         )
 
     def _get_item_encoder(self, train_data):
