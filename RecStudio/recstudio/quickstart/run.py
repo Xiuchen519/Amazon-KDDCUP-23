@@ -162,7 +162,16 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
         model.config['train']['epochs'] = 0 
         model.fit(*datasets[:2], run_mode='light')
         # model.evaluate(datasets[-1], model_path=model_path, with_score=args.with_score)
-        res_df = model.recall_candidates(datasets[-1], model_path=model_path, with_score=args.with_score)
+        if args.test_task == 'task1':
+            valid_inter_feat_path = '/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task1_data'
+            datasets[0].config['valid_inter_feat_name'] = 'task13_4_task1_valid_inter_feat.csv'
+        elif args.test_task == 'task2':
+            valid_inter_feat_path = '/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task2_data'
+            datasets[0].config['valid_inter_feat_name'] = 'task23_4_task2_valid_inter_feat.csv'
+
+        valid_dataset = datasets[0].build_valid_dataset(valid_inter_feat_path, datasets[0].config['field_separator'])
+
+        res_df = model.recall_candidates(valid_dataset, model_path=model_path, with_score=args.with_score)
 
         candidates_path = os.path.join('./candidates', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         # save results 

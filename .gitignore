@@ -167,3 +167,8 @@ scripts
 # text method 
 /text_method/roberta_results
 /text_method/ckpt
+
+# XGBoost
+/XGBoost/ckpt
+/XGBoost/logs
+/XGBoost/candidates

@@ -7,7 +7,7 @@ from recstudio.model import basemodel, loss_func, module, scorer
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
-            self, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
+            self, config, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer, item_encoder,
             bidirectional=False, training_pooling_type='last', eval_pooling_type='last') -> None:
         super().__init__()
         self.fiid = fiid
@@ -15,7 +15,13 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.bidirectional = bidirectional
         self.training_pooling_type = training_pooling_type
         self.eval_pooling_type = eval_pooling_type
-        self.position_emb = torch.nn.Embedding(max_seq_len, embed_dim)
+        self.reverse_pos = config['reverse_pos']
+        
+        if self.reverse_pos:
+            self.position_emb = torch.nn.Embedding(max_seq_len + 1, embed_dim, padding_idx=0) # plus one for padding
+        else:
+            self.position_emb = torch.nn.Embedding(max_seq_len, embed_dim)
+
         transformer_encoder = torch.nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=n_head,
@@ -36,8 +42,17 @@ class SASRecQueryEncoder(torch.nn.Module):
 
     def forward(self, batch, need_pooling=True):
         user_hist = batch['in_'+self.fiid]
-        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
-        positions = positions.unsqueeze(0).expand_as(user_hist)
+        
+        if self.reverse_pos:
+            positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+            positions = positions.expand(user_hist.size(0), -1) # [B, L]
+            padding_pos = positions >= batch['seqlen'].unsqueeze(dim=-1) # [B, L]
+            positions = batch['seqlen'].unsqueeze(dim=-1) - positions # [B, L]
+            positions[padding_pos] = 0
+        else:
+            positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
+            positions = positions.unsqueeze(0).expand_as(user_hist)
+        
         position_embs = self.position_emb(positions)
         seq_embs = self.item_encoder(user_hist)
 
@@ -109,6 +124,7 @@ class SASRec_Next(basemodel.BaseRetriever):
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
         return SASRecQueryEncoder(
+            config=model_config,
             fiid=self.fiid, embed_dim=self.embed_dim,
             max_seq_len=train_data.config['max_seq_len'], n_head=model_config['head_num'],
             hidden_size=model_config['hidden_size'], dropout=model_config['dropout_rate'],
