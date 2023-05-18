@@ -76,9 +76,10 @@ def get_default_parser() -> ArgumentParser:
     group.add_argument('--data_config_path', type=str, default=None, help='path of datasets config file')
     group.add_argument('--do_prediction', action='store_true', default=False, help='only do prediction or not')
     group.add_argument('--with_score', action='store_true', default=False, help='do prediction with score or without')
-    group.add_argument('--do_evaluate', action='store_true', default=False, help='only do evaluate or not')
+    group.add_argument('--do_evaluation', action='store_true', default=False, help='only do evaluate or not')
     group.add_argument('--test_task', default='task1', type=str, help='which task to test')
     group.add_argument('--do_clean_train', action='store_true', default=False, help='only do clean train or not')
+    group.add_argument('--do_encode_query', action='store_true', default=False, help='only do encode query or not')
     group.add_argument('--use_cleaned_train', action='store_true', default=False, help='use cleaned train or not')
     group.add_argument('--model_path', type=str, default=None, help='the model parameters used to predict')
     group.add_argument('--mode', choices=['tune', 'light', 'detail'],

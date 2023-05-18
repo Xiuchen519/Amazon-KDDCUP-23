@@ -21,8 +21,7 @@ from recstudio.model import init, basemodel, loss_func
 from recstudio.utils import callbacks
 from recstudio.utils.utils import *
 from recstudio.data.dataset import (TripletDataset, CombinedLoaders)
-
-# from lion_pytorch import Lion 
+import wandb 
 
 class Recommender(torch.nn.Module, abc.ABC):
     def __init__(self, config: Dict = None, **kwargs):
@@ -113,12 +112,17 @@ class Recommender(torch.nn.Module, abc.ABC):
         Fit the model with train data.
         """
         # self.set_device(self.config['gpu'])
+        # initialize wandb 
         self.logger = logging.getLogger('recstudio')
+
         if config is not None:
             self.config.update(config)
 
         if kwargs is not None:
             self.config.update(kwargs)
+
+        if self.config['train']['use_wandb'] == True:
+            wandb.init(project=self.config['train']['wandb_project'])
 
         # set tensorboard
         tb_log_name = None
@@ -267,6 +271,11 @@ class Recommender(torch.nn.Module, abc.ABC):
             # nni.report_final_result(output)
         if verbose:
             self.logger.info(color_dict(output, self.run_mode == 'tune'))
+        
+        # we should get summary from validation results
+        # if self.config['train']['use_wandb']:
+        #     wandb.summary.run.summary[self.val_metric] = output[self.val_metric]
+        
         return output
 
     def predict(self, predict_data, with_score=False, verbose=True, model_path=None, **kwargs) -> Dict:
@@ -299,7 +308,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         res_df = self.predict_epoch(test_loader, predict_data, with_score)
         return res_df
 
-    def recall_candidates(self, eval_data, with_score=False, verbose=True, model_path=None, **kwargs) -> Dict:
+    def retrieve_candidates(self, eval_data, with_score=False, verbose=True, model_path=None, **kwargs):
 
         eval_data.drop_feat(self.fields)
         eval_loader = eval_data.eval_loader(batch_size=self.config['eval']['batch_size'])      
@@ -317,11 +326,35 @@ class Recommender(torch.nn.Module, abc.ABC):
         # self.config['eval']['predict_topk'] = 100
         
         self.eval()
-        res_df, output_list = self.recall_candidates_epoch(eval_loader, eval_data, with_score)
+        res_df, output_list = self.retrieve_candidates_epoch(eval_loader, eval_data, with_score)
         self.test_epoch_end(output_list)
         # print result 
         self.logger.info('\n'+color_dict(self.logged_metrics, self.run_mode == 'tune'))
         return res_df
+    
+    def encode_query(self, data, model_path=None, encode_data='valid', **kwargs):
+
+        # get dataloader
+        data.drop_feat(self.fields)
+        if encode_data == 'valid':
+            data_loader = data.eval_loader(batch_size=self.config['eval']['batch_size'])
+        elif encode_data == 'predict':
+            data_loader = data.prediction_loader(batch_size=self.config['eval']['batch_size'])
+
+        # load model parameters 
+        if model_path is not None:
+            self.load_checkpoint(model_path)
+            self.logger.info(f"load model parameters from {model_path}")
+
+        if 'config' in kwargs:
+            self.config.update(kwargs['config'])
+
+        # if you don't use the config in ckpt, reset it here.
+        # self.config['eval']['predict_topk'] = 100
+        
+        self.eval()
+        query_embedding = self.encode_query_epoch(data_loader, data)
+        return query_embedding
 
     # def predict(self, batch, k, *args, **kwargs):
     #     pass
@@ -333,6 +366,9 @@ class Recommender(torch.nn.Module, abc.ABC):
     def _get_callback(self, dataset_name):
         save_dir = self.config['eval']['save_path']
         if self.val_check:
+            # define how to summary validation metrics
+            if self.config['train']['use_wandb']:
+                wandb.define_metric(self.val_metric, summary=self.config['train']['early_stop_mode'])
             return callbacks.EarlyStopping(self, self.val_metric, dataset_name, save_dir=save_dir, \
                 patience=self.config['train']['early_stop_patience'], mode=self.config['train']['early_stop_mode'])
         else:
@@ -387,6 +423,9 @@ class Recommender(torch.nn.Module, abc.ABC):
             self.logger.info(color_dict(self.logged_metrics, self.run_mode == 'tune'))
         else:
             self.logger.info('\n'+color_dict(self.logged_metrics, self.run_mode == 'tune'))
+
+        if self.config['train']['use_wandb'] == True:
+            wandb.log(self.logged_metrics)
 
     def validation_epoch_end(self, outputs, train_check=False):
         val_metrics = self.config['eval']['val_metrics']
@@ -465,6 +504,8 @@ class Recommender(torch.nn.Module, abc.ABC):
             'xavier_normal': init.xavier_normal_initialization,
             'xavier_uniform': init.xavier_uniform_initialization,
             'normal': init.normal_initialization(self.config['train']['init_range']),
+            'embedding_init': init.embedding_initialization(self.config['train']['init_range']),
+            'default': None, 
         }
         for name, module in self.named_children():
             if isinstance(module, Recommender):
@@ -472,7 +513,8 @@ class Recommender(torch.nn.Module, abc.ABC):
             else:
                 method = self.config['train']['init_method']
                 init_method = init_methods[method]
-                module.apply(init_method)
+                if init_method is not None:
+                    module.apply(init_method)
 
     @staticmethod
     def _get_dataset_class():
@@ -805,9 +847,6 @@ class Recommender(torch.nn.Module, abc.ABC):
 
         return output_list
     
-    def filter_dirty_data_step(batch, dataset):
-        pass
- 
     @torch.no_grad()
     def filter_dirty_data_epoch(self, dataloader, dataset):
         if hasattr(self, '_update_item_vector'):
@@ -849,7 +888,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         return res_df
 
     @torch.no_grad()
-    def recall_candidates_epoch(self, dataloader, dataset, with_score):
+    def retrieve_candidates_epoch(self, dataloader, dataset, with_score):
         if hasattr(self, '_update_item_vector'):
             self._update_item_vector()
 
@@ -860,7 +899,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             batch = self._to_device(batch, self._parameter_device)
 
             # model predict results
-            candidates_df, output = self.recall_candidates_step(batch, dataset, with_score)
+            candidates_df, output = self.retrieve_candidates_step(batch, dataset, with_score)
             output_list.append(output)
             # prediction_df = self.candidate_predict_step(batch, dataset)
 
@@ -870,6 +909,25 @@ class Recommender(torch.nn.Module, abc.ABC):
         res_df = res_df.reset_index(drop=True)
     
         return res_df, output_list
+
+    @torch.no_grad()
+    def encode_query_epoch(self, dataloader, dataset):
+
+        if hasattr(self, '_update_item_vector'):
+            self._update_item_vector()
+
+        output_list = []
+        res_df = pd.DataFrame({'locale' : [], 'candidates' : [], 'sess_id' : []})
+        for batch in tqdm(dataloader, dynamic_ncols=True):
+            # data to device
+            batch = self._to_device(batch, self._parameter_device)
+
+            query_embedding = self.encode_query_step(batch, dataset)
+            output_list.append(query_embedding)
+
+        query_embedding = torch.cat(output_list, dim=0)
+    
+        return query_embedding
     
     @abc.abstractmethod
     def predict_step(self, batch, dataset):

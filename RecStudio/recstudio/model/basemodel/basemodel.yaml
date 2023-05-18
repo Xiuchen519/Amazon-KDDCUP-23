@@ -67,6 +67,9 @@ train:
     seed: 2022  # random seed, usually 42 is a magic number
     weight_decay: 0.0      # weight decay for the optimizer
     tensorboard_path: ~
+    use_wandb: False
+    wandb_project: ~
+    wandb_count: 0
 
 
 eval:

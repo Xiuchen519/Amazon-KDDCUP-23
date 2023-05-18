@@ -45,7 +45,7 @@ class MLPQueryEncoder(torch.nn.Module):
             self.hidden_layers,
             activation_func=config['activation'],
             dropout=config['dropout_rate'], 
-            batch_norm=False,
+            batch_norm=config['batch_norm'],
             last_activation=False)
 
             
@@ -86,6 +86,7 @@ class SeqMLP(basemodel.BaseRetriever):
         )
 
     def _init_parameter(self):
+        
         if self.config['train']['init_method'] == 'seqmlp_init':
             init_method = seqmlp_initialization(self.config['train']['init_range'])
             for name, module in self.named_children():

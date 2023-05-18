@@ -1,6 +1,6 @@
 import torch
 from recstudio.ann import sampler
-from recstudio.data import dataset
+from recstudio.data import dataset, advance_dataset
 from recstudio.model import basemodel, loss_func, scorer
 
 r"""
@@ -49,9 +49,19 @@ class HGN(basemodel.BaseRetriever):
     (BPR) to capture both the long-term and short-term user interests. HGN consists of a feature
     gating module, an instance gating module, and an item-item product module."""
 
+    def _init_model(self, train_data, drop_unused_field=True):
+        super()._init_model(train_data, drop_unused_field)
+        self.item_fields = {train_data.fiid}
+    
+    def _set_data_field(self, data):
+        data.use_field = set(
+            [data.fuid, data.fiid, data.frating, 'locale', 
+             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
+        )
+
     def _get_dataset_class():
         r"""The dataset is SeqDataset."""
-        return dataset.SeqDataset
+        return advance_dataset.KDDCUPSeqDataset
 
     def _get_query_encoder(self, train_data):
         return HGNQueryEncoder(self.fuid, self.fiid, train_data.num_users, self.embed_dim, train_data.config['max_seq_len'],
@@ -62,7 +72,13 @@ class HGN(basemodel.BaseRetriever):
 
     def _get_loss_func(self):
         r"""BPR loss is used."""
-        return loss_func.BPRLoss()
+        if self.config['model']['loss_func'] == 'softmax':
+            return loss_func.SoftmaxLoss()
+        elif self.config['model']['loss_func'] == 'bpr':
+            return loss_func.BPRLoss()
 
     def _get_sampler(self, train_data):
-        return sampler.UniformSampler(train_data.num_items)
+        if self.config['model']['loss_func'] == 'softmax':
+            return None
+        elif self.config['model']['loss_func'] == 'bpr':
+            return sampler.UniformSampler(train_data.num_items)

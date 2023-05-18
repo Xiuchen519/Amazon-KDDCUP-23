@@ -500,7 +500,7 @@ class BaseRetriever(Recommender):
         return prediction_df
     
 
-    def recall_candidates_step(self, batch, dataset:advance_dataset.KDDCUPDataset, with_score):
+    def retrieve_candidates_step(self, batch, dataset:advance_dataset.KDDCUPDataset, with_score):
         # get metric and cutoffs 
         eval_metric = self.config['eval']['test_metrics']
         cutoffs = self.config['eval']['cutoff'] if isinstance(self.config['eval']['cutoff'], list) else [self.config['eva']['cutoff']]
@@ -555,3 +555,8 @@ class BaseRetriever(Recommender):
         in_candidates = (next_item.view(-1, 1) == batch['last_item_candidates']).sum(dim=-1) > 0 # [B]
         clean_flag = torch.logical_or(in_topk, in_candidates).cpu().tolist()
         return clean_flag
+    
+
+    def encode_query_step(self, batch, dataset:advance_dataset.KDDCUPDataset):
+        query = self.query_encoder(self._get_query_feat(batch)) # [B, D]
+        return query 
