@@ -1,6 +1,7 @@
 data:
   split_mode: user
   split_ratio: [1.0]
+  max_seq_len: 10
 
 eval:
   batch_size: 1024
@@ -11,16 +12,21 @@ eval:
   topk: 300
 
 model:
-  embed_dim: 128
-  hidden_size: 256
-  dropout_rate: [0.25, 0.5]
-  layer_num: 2
+  # MLP Query Encoder
+  embed_dim: 256
+  activation: 'relu'
+  batch_norm: True
+  dropout_rate: 0.15
+  hidden_layers: [768, 768, 768]
   loss_func: softmax
-
+  
 train:
   batch_size: 1024
   early_stop_patience: 10
-  epochs: 100
-  init_method: default
+  epochs: 300
+  init_method: normal
   negative_count: ~
   scheduler: onplateau
+  pretrained_embed_file: ~
+  learning_rate: 0.00075
+  weight_decay: 0.0

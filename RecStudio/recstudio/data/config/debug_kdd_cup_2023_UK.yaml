@@ -34,6 +34,6 @@ network_feat_name: ~ #[[social.txt], [ml-100k.kg, ml-100k.link]]
 mapped_feat_field: [*u, *i]
 network_feat_field: [[[source_id:token, target_id:token]], [[head_id:token, tail_id:token, relation_id:token], [*i, entity_id:token]]]
 
-item_candidates_path: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/candidates/UK/UK_co_graph_item_candidates_150.parquet
+item_candidates_path: ~ #/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/candidates/UK/UK_co_graph_item_candidates_150.parquet
 
 save_cache: True # whether to save processed dataset to cache.

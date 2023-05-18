@@ -1,4 +1,6 @@
+from typing import Dict
 import torch
+from RecStudio.recstudio.ann.sampler import Dict
 from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import functional as recfn
@@ -107,6 +109,10 @@ class SASRec_Next(basemodel.BaseRetriever):
     #     parent_parser.add_argument("--negative_count", type=int, default=1, help='negative sampling numbers')
     #     return parent_parser
 
+    def __init__(self, config: Dict = None, **kwargs):
+        super().__init__(config, **kwargs)
+        self.config['train']['epochs'] = 300
+
     def _get_dataset_class():
         r"""SeqDataset is used for SASRec."""
         return advance_dataset.KDDCUPSeqDataset
@@ -114,6 +120,7 @@ class SASRec_Next(basemodel.BaseRetriever):
     def _init_model(self, train_data, drop_unused_field=True):
         super()._init_model(train_data, drop_unused_field)
         self.item_fields = {train_data.fiid}
+        self.config['train']['epochs'] = 300
     
     def _set_data_field(self, data):
         data.use_field = set(

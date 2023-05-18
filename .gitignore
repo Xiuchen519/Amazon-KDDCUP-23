@@ -172,3 +172,12 @@ scripts
 /XGBoost/ckpt
 /XGBoost/logs
 /XGBoost/candidates
+
+# candidates
+/candidates/query_embeddings
+
+# BM25
+/bm25/cache
+
+# wandb
+/wandb

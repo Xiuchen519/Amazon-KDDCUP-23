@@ -12,8 +12,8 @@ eval:
 
 model:
   hidden_size: 256
-  dropout_rate: 0.3
-  layer_num: 1
+  dropout_rate: 0.5
+  layer_num: 2
   loss_func: softmax
   embed_dim: 128
 

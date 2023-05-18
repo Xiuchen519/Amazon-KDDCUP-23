@@ -1,8 +1,9 @@
 from typing import List
 
 import torch
-from recstudio.data import dataset
+from recstudio.data import dataset, advance_dataset
 from recstudio.model import basemodel, loss_func, module, scorer
+from recstudio.ann import sampler
 
 r"""
 Paper Reference:
@@ -61,9 +62,20 @@ class NARM(basemodel.BaseRetriever):
         - ``layer_num(int)``: The number of layers for the GRU. Default: ``1``.
     """
 
+    def _init_model(self, train_data, drop_unused_field=True):
+        super()._init_model(train_data, drop_unused_field)
+        self.item_fields = {train_data.fiid}
+    
+    def _set_data_field(self, data):
+        data.use_field = set(
+            [data.fuid, data.fiid, data.frating, 'locale', 
+             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
+        )
+
     def _get_dataset_class():
-        r"""SeqDataset is used for NARM."""
-        return dataset.SeqDataset
+        r"""The dataset is SeqDataset."""
+        return advance_dataset.KDDCUPSeqDataset
+
 
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
@@ -77,12 +89,20 @@ class NARM(basemodel.BaseRetriever):
         )
 
     def _get_score_func(self):
-        r"""InnerProduct is used as the score function."""
         return scorer.InnerProductScorer()
 
     def _get_loss_func(self):
-        r"""SoftmaxLoss is used as the loss function."""
-        return loss_func.SoftmaxLoss()
+        r"""Binary Cross Entropy is used as the loss function."""
+        if self.config['model']['loss_func'] == 'softmax':
+            return loss_func.SoftmaxLoss()
+        elif self.config['model']['loss_func'] == 'sampled_softmax':
+            return loss_func.SampledSoftmaxLoss()
+        else:
+            return loss_func.BinaryCrossEntropyLoss()
 
     def _get_sampler(self, train_data):
-        return None
+        r"""Uniform sampler is used as negative sampler."""
+        if self.config['model']['loss_func'] == 'softmax':
+            return None
+        else:
+            return sampler.UniformSampler(train_data.num_items)

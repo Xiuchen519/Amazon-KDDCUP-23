@@ -62,7 +62,7 @@ def run(model: str, dataset: str, model_config: Dict=None, data_config: Dict=Non
 
 
 def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_config: Dict=None, model_config_path: str=None, data_config_path: str=None, verbose=True,
-                do_prediction=False, do_evaluate=False, model_path=None, **kwargs):
+                do_prediction=False, do_evaluation=False, model_path=None, **kwargs):
     model_class, model_conf = get_model(model)
 
     if model_config_path is not None:
@@ -158,7 +158,7 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
         res_df.to_parquet(prediction_path, engine='pyarrow')
         model.logger.info(f'Prediction is finished, results are saved in {prediction_path}.')
 
-    elif do_evaluate == True:
+    elif do_evaluation == True:
         model.config['train']['epochs'] = 0 
         model.fit(*datasets[:2], run_mode='light')
         # model.evaluate(datasets[-1], model_path=model_path, with_score=args.with_score)
@@ -171,7 +171,7 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
 
         valid_dataset = datasets[0].build_valid_dataset(valid_inter_feat_path, datasets[0].config['field_separator'])
 
-        res_df = model.recall_candidates(valid_dataset, model_path=model_path, with_score=args.with_score)
+        res_df = model.retrieve_candidates(valid_dataset, model_path=model_path, with_score=args.with_score)
 
         candidates_path = os.path.join('./candidates', time.strftime(f"{model_name}/{dataset_name}/%Y-%m-%d-%H-%M-%S.parquet", time.localtime()))
         # save results 
@@ -189,6 +189,51 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
         with open(save_path, 'wb') as f:
             pickle.dump(np.array(clean_flag), f)
         logger.info(f"clean flag is saved in {save_path}!")
+
+    elif args.do_encode_query == True:
+        # init model 
+        model.logger = logger
+        model._init_model(datasets[0])
+        model._accelerate()
+
+        model.load_checkpoint(args.model_path)
+        logger.info(f'model parameters are loaded from {args.model_path}')
+        item_embeddings = model.item_encoder.weight
+        save_path = time.strftime(f"{model_name}/{dataset_name}/product_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
+        save_path = os.path.join('./candidates/query_embeddings/', save_path)
+        if not os.path.exists(os.path.dirname(save_path)):
+            os.makedirs(os.path.dirname(save_path))
+        torch.save(item_embeddings, save_path)
+        logger.info(f'product embeddings are saved in {save_path}')
+
+
+        mode = 'valid'    
+        query_dataset = datasets[1]
+        query_embedding = model.encode_query(query_dataset, model_path=args.model_path, encode_data=mode)
+        save_path = time.strftime(f"{model_name}/{dataset_name}/{mode}_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
+        save_path = os.path.join('./candidates/query_embeddings/', save_path)
+        if not os.path.exists(os.path.dirname(save_path)):
+            os.makedirs(os.path.dirname(save_path))
+        torch.save(query_embedding, save_path)
+        logger.info(f'{mode} query embeddings are saved in {save_path}')
+
+        mode = 'predict'
+        query_embedding_list = []
+        if args.test_task == 'task1':
+            prediction_inter_feat_list = task1_prediction_inter_feat_list
+        elif args.test_task == 'task3':
+            prediction_inter_feat_list = task3_prediction_inter_feat_list
+        for pred_path in prediction_inter_feat_list:
+            query_dataset = datasets[0].build_test_dataset(pred_path)
+            query_embedding = model.encode_query(query_dataset, model_path=args.model_path, encode_data=mode)
+            query_embedding_list.append(query_embedding)
+        query_embedding = torch.cat(query_embedding_list, dim=0)
+        save_path = time.strftime(f"{model_name}/{dataset_name}/{mode}_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
+        save_path = os.path.join('./candidates/query_embeddings/', save_path)
+        if not os.path.exists(os.path.dirname(save_path)):
+            os.makedirs(os.path.dirname(save_path))
+        torch.save(query_embedding, save_path)
+        logger.info(f'{mode} query embeddings are saved in {save_path}')
     
     else:
         

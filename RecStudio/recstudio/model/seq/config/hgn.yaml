@@ -1,5 +1,28 @@
+data:
+  split_mode: user
+  split_ratio: [1.0]
+  max_seq_len: 10
+
+eval:
+  batch_size: 1024
+  predict_topk: 100
+  test_metrics: [recall, precision, map, ndcg, mrr, hit]
+  val_metrics: [mrr, recall, precision, ndcg]
+  cutoff: [100, 200, 300]
+  topk: 300
+
 model:
   pooling_type: mean
+  loss_func: softmax
 
 train:
+  learning_rate: 0.001
   negative_count: 1
+  batch_size: 1024
+  early_stop_patience: 10
+  epochs: 300
+  init_method: default
+  init_range: 0.02
+  scheduler: onplateau
+  scheduler_patience: 2
+  scheduler_factor: 0.5
