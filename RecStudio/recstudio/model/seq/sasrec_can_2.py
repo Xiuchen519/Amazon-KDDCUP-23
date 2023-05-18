@@ -3,7 +3,10 @@ from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import functional as recfn
 from recstudio.model import basemodel, loss_func, module, scorer
+from typing import Dict
 
+from recstudio.utils import get_model
+import logging
 
 class SASRecQueryEncoder(torch.nn.Module):
     def __init__(
@@ -36,6 +39,7 @@ class SASRecQueryEncoder(torch.nn.Module):
             encoder_layer=transformer_encoder,
             num_layers=n_layer,
         )
+        self.input_dropout = torch.nn.Dropout(p=config['input_dropout'])
         self.dropout = torch.nn.Dropout(p=dropout)
         self.training_pooling_layer = module.SeqPoolingLayer(pooling_type=self.training_pooling_type)
         self.eval_pooling_layer = module.SeqPoolingLayer(pooling_type=self.eval_pooling_type)
@@ -63,7 +67,7 @@ class SASRecQueryEncoder(torch.nn.Module):
         else:
             attention_mask = torch.zeros((L, L), dtype=torch.bool, device=user_hist.device)
         transformer_out = self.transformer_layer(
-            src=self.dropout(seq_embs+position_embs),
+            src=self.input_dropout(seq_embs+position_embs),
             mask=attention_mask,
             src_key_padding_mask=mask4padding)  # BxLxD
 
@@ -82,7 +86,7 @@ class SASRecQueryEncoder(torch.nn.Module):
             return transformer_out
 
 
-class SASRec_Next(basemodel.BaseRetriever):
+class SASRec_CAN_2(basemodel.BaseRetriever):
     r"""
     SASRec models user's sequence with a Transformer.
 
@@ -107,19 +111,56 @@ class SASRec_Next(basemodel.BaseRetriever):
     #     parent_parser.add_argument("--negative_count", type=int, default=1, help='negative sampling numbers')
     #     return parent_parser
 
+    def _init_model(self, train_data, drop_unused_field=True):
+        self.candidates_retriver = self.get_candidates_retriver(train_data) # set use train_data field before DIN
+        super()._init_model(train_data, drop_unused_field)
+        self.cand_sampler = sampler.UniformSampler(train_data.num_items)
+
+    def get_candidates_retriver(self, train_data):
+        ckpt_path = self.config['model']['retriver_ckpt_path']
+        retriver_name = self.config['model']['retriver_name']
+        ckpt = torch.load(ckpt_path, map_location=torch.device('cpu'))
+        model_class, model_conf = get_model(retriver_name)
+        model_conf['model'].update(ckpt['config']['model'])
+        model_conf['train']['gpu'] = self.config['train']['gpu']
+        retriver = model_class(model_conf)
+        retriver.logger = logging.getLogger('recstudio')
+        retriver._init_model(train_data, drop_unused_field=False)
+        retriver._accelerate()
+        return retriver
+    
+    def _init_parameter(self):
+        super()._init_parameter()
+
+        # load sasrec parameters 
+        sasrec_path = self.config['model']['sasrec_ckpt_path']
+        ckpt = torch.load(sasrec_path, map_location=self._parameter_device)
+        self.config['model'].update(ckpt['config']['model'])
+
+        # modify config for sasrec_can 
+        self.config['model']['loss_func'] = 'cansoftmax'
+        
+        if hasattr(self, '_update_item_vector'):
+            self._update_item_vector()
+            if 'item_vector' not in ckpt['parameters']:
+                ckpt['parameters']['item_vector'] = self.item_vector
+        self.load_state_dict(ckpt['parameters'], False)
+
+        # load retriver and freeze its parameters 
+        ckpt_path = self.config['model']['retriver_ckpt_path']
+        self.candidates_retriver.load_checkpoint(ckpt_path)
+        for name, parameter in self.candidates_retriver.named_parameters():
+            parameter.requires_grad = False
+
     def _get_dataset_class():
         r"""SeqDataset is used for SASRec."""
         return advance_dataset.KDDCUPSeqDataset
-
-    def _init_model(self, train_data, drop_unused_field=True):
-        super()._init_model(train_data, drop_unused_field)
-        self.item_fields = {train_data.fiid}
     
     def _set_data_field(self, data):
-        data.use_field = set(
-            [data.fuid, data.fiid, data.frating, 'locale', 
-             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
-        )
+        if self.config['model']['loss_func'] != 'CanSoftmax':
+            data.use_field = set([data.fuid, data.fiid, data.frating, 'locale'])
+        else:
+            data.use_field = set([data.fuid, data.fiid, data.frating, 'locale', 'candidates'])
 
     def _get_query_encoder(self, train_data):
         model_config = self.config['model']
@@ -134,60 +175,86 @@ class SASRec_Next(basemodel.BaseRetriever):
         )
 
     def _get_item_encoder(self, train_data):
-        emb = torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
-        if self.config['train'].get("pretrained_embed_file", None) is not None:
-            self.load_pretrained_embedding(emb, train_data, self.config['train']['pretrained_embed_file'])
-        return emb
+        return torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
 
     def _get_score_func(self):
         r"""InnerProduct is used as the score function."""
-        if self.config['model']['loss_func'] == 'ccl':
-            return scorer.CosineScorer()
-        else:
-            return scorer.InnerProductScorer()
+        return scorer.InnerProductScorer()
 
     def _get_loss_func(self):
         r"""Binary Cross Entropy is used as the loss function."""
-        if self.config['model']['loss_func'] == 'softmax':
+        if self.config['model']['loss_func'] == 'softmax' or self.config['model']['loss_func'] == 'cansoftmax':
             return loss_func.SoftmaxLoss()
-        elif self.config['model']['loss_func'] == 'sampled_softmax':
-            return loss_func.SampledSoftmaxLoss()
-        elif self.config['model']['loss_func'] == 'ccl':
-            return loss_func.CCLLoss(self.config['model']['negative_margin'], self.config['model']['negative_weight'])
-        else:
+        elif self.config['model']['loss_func'] == "bce":
             return loss_func.BinaryCrossEntropyLoss()
+
 
     def _get_sampler(self, train_data):
         r"""Uniform sampler is used as negative sampler."""
-        if self.config['model']['loss_func'] == 'softmax':
+        if self.config['model']['loss_func'] in ['softmax', 'cansoftmax']:
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
-
-    
-    def load_pretrained_embedding(self, embedding_layer, train_data, path: str):
-        import pickle
-        with open(path, 'rb') as f:
-            emb_ckpt = pickle.load(f)
-        
-        self.logger.info(f"Load item embedding from {path}.")
-        dataset_item_map = train_data.field2tokens[train_data.fiid]
-        ckpt_item_map = emb_ckpt['map']
-        id2id = torch.tensor([ckpt_item_map[i] if i!='[PAD]' else 0 for i in dataset_item_map ])
-        emb = emb_ckpt['embedding'][id2id].contiguous().data
-
-        assert emb.shape == embedding_layer.weight.shape
-        embedding_layer.weight.data = emb
-        torch.nn.init.constant_(embedding_layer.weight.data[embedding_layer.padding_idx], 0.)
-
 
     # def _get_sampler(self, train_data):
     #     r"""Uniform sampler is used as negative sampler."""
     #     return None
 
-    # def candidate_topk(self, batch, k, user_h=None, return_query=False):
-    #     self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]
-    #     score, topk_items = super().topk(batch, k, user_h, return_query) # [B, 150]
-    #     topk_items = topk_items - 1 # [B, topk]
-    #     topk_items = torch.gather(batch['last_item_candidates'], dim=-1, index=topk_items)
-    #     return score, topk_items
+    def _get_candidates(self, batch, test=False):
+        bs = batch['in_'+self.fiid].shape[0]
+        
+        num_sample = self.config['train']['num_candidates']
+        
+        if self.config['train']['candidate_rand'] == True and test == False:
+            num_sample_rand = self.config['train']['num_candidates']
+        
+        if self.config['train']['candidate_strategy'] == 'sasrec':
+            self.candidates_retriver._update_item_vector()
+            _, topk_items = self.candidates_retriver.topk(batch, num_sample, batch['in_'+self.fiid]) # [B, N]
+            candidates = topk_items
+        elif self.config['train']['candidate_strategy'] == 'co_graph':
+            candidates = batch['last_item_candidates'][:, :num_sample].contiguous() # [B, N]
+        elif self.config['train']['candidate_strategy'] == 'sasrec+co_graph':
+            _, sasrec_candidates = self.candidates_retriver.topk(batch, num_sample, batch['in_'+self.fiid]) # [B, N]
+            co_graph_candidates = batch['last_item_candidates'][:, :num_sample].contiguous() # [B, N]
+            candidates = torch.cat([sasrec_candidates, co_graph_candidates], dim=-1) # [B, 2 * N]
+        
+        if self.config['train']['candidate_rand'] == True and test == False:
+            candidates_rand, _ = self.cand_sampler.forward(bs, num_sample_rand) # [B, N_RAND]
+            candidates = torch.cat([candidates, candidates_rand.to(candidates.device)], dim=-1) # [B, N + N_RAND]
+        
+        return candidates
+
+    def forward(self, batch: Dict, full_score: bool = False, return_query: bool = False, return_item: bool = False, return_neg_item: bool = False, return_neg_id: bool = False):
+        if self.config['model']['loss_func'] == 'cansoftmax':
+            all_candidates = self._get_candidates(batch, False) # [B, CAND]
+
+            output = {}
+            pos_items = self._get_item_feat(batch)
+            pos_item_vec = self.item_encoder(pos_items)
+
+            query = self.query_encoder(self._get_query_feat(batch))
+            pos_score = self.score_func(query, pos_item_vec) # [B]
+            if batch[self.fiid].dim() > 1:
+                pos_score[batch[self.fiid] == 0] = -float('inf')  # padding
+            output['score'] = {'pos_score': pos_score}
+            
+            item_vectors = self.item_encoder(all_candidates) # [B, CAND, 128]
+            all_item_scores = self.score_func(query, item_vectors) # [B, CAND]
+            # include self
+            all_item_scores = torch.cat([all_item_scores, pos_score.unsqueeze(dim=-1)], dim=-1) # [B, CAND + 1]
+            
+            output['score']['all_score'] = all_item_scores 
+            return output
+        else:
+            return super().forward(batch, full_score, return_query, return_item, return_neg_item, return_neg_id)
+
+    def topk(self, batch, k, user_h=None, return_query=False):
+        all_candidates = self._get_candidates(batch, True) # [B, CAND]
+        self.item_vector = self.item_encoder(all_candidates) # [B, CAND]
+        score, topk_items = super().topk(batch, k, user_h, return_query) # [B, 150]
+        topk_items = topk_items - 1 # [B, topk]
+        topk_items = torch.gather(all_candidates, dim=-1, index=topk_items)
+        return score, topk_items
+
+

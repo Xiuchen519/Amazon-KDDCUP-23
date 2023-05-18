@@ -6,7 +6,7 @@ from recstudio.utils.utils import parser_yaml, get_model
 _CHOICES = {
     'accelerator': ['cpu', 'gpu', 'dp', 'ddp'],
     'early_stop_mode': ['min', 'max'],
-    'init_method': ['xavier_normal', 'normal', 'xavier_uniform'],
+    # 'init_method': ['xavier_normal', 'normal', 'xavier_uniform'],
     'sampling_method': ['none', 'sir', 'dns', 'toprand', 'top&rand', 'brute'],
     'scheduler': ['onplateau', 'exponential'],
     'learner': ['adam', 'adagrad', 'sgd', 'rmsprop', 'sparse_adam', 'lion'],
@@ -71,7 +71,7 @@ def get_default_parser() -> ArgumentParser:
         argument_default=SUPPRESS,
         formatter_class=ArgumentDefaultsHelpFormatter)
     group = parser.add_argument_group('main')
-    group.add_argument('--model', '-m', type=str, default='SASRec2', help='model name')
+    group.add_argument('--model', '-m', type=str, default='SASRec_Next', help='model name')
     group.add_argument('--dataset', '-d', type=str, default='kdd_cup_2023', help='dataset name')
     group.add_argument('--data_config_path', type=str, default=None, help='path of datasets config file')
     group.add_argument('--do_prediction', action='store_true', default=False, help='only do prediction or not')

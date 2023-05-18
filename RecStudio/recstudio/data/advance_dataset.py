@@ -522,25 +522,26 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             logger.info('item index feat is ready.')
             
             if hasattr(self, 'tokenizer'):
-                logger.info('********* start to create title feat ************')
-                def tokenize_function(examples, tokenizer, max_length):
-                    if 'title' in examples:
-                        return tokenizer(examples['title'], 
-                                        add_special_tokens=False, # don't add special tokens when preprocess
-                                        truncation=True, 
-                                        max_length=max_length,
-                                        return_attention_mask=False,
-                                        return_token_type_ids=False)
-                not_title_columns = []
-                for col in self.item_feat.columns:
-                    if 'product_id' not in col and 'title' not in col and 'locale' not in col:
-                        not_title_columns.append(col)
-                self.title_feat = self.item_feat.drop(columns=not_title_columns) # no inplace, original item_feat is keeped.
-                self.title_feat['title'][self.title_feat['title'] == ''] = self.tokenizer.unk_token
-                self.title_feat = TFDataset.from_pandas(self.title_feat, preserve_index=False)
-                self.title_feat = self.title_feat.map(partial(tokenize_function, tokenizer=self.tokenizer, max_length=self.config['max_title_len']), 
-                                                    num_proc=8, remove_columns=["title"], batched=True)
-                logger.info('********* title feat is ready ************')
+                if 'title' in self.item_feat:
+                    logger.info('********* start to create title feat ************')
+                    def tokenize_function(examples, tokenizer, max_length):
+                        if 'title' in examples:
+                            return tokenizer(examples['title'], 
+                                            add_special_tokens=False, # don't add special tokens when preprocess
+                                            truncation=True, 
+                                            max_length=max_length,
+                                            return_attention_mask=False,
+                                            return_token_type_ids=False)
+                    not_title_columns = []
+                    for col in self.item_feat.columns:
+                        if 'product_id' not in col and 'title' not in col and 'locale' not in col:
+                            not_title_columns.append(col)
+                    self.title_feat = self.item_feat.drop(columns=not_title_columns) # no inplace, original item_feat is keeped.
+                    self.title_feat['title'][self.title_feat['title'] == ''] = self.tokenizer.unk_token
+                    self.title_feat = TFDataset.from_pandas(self.title_feat, preserve_index=False)
+                    self.title_feat = self.title_feat.map(partial(tokenize_function, tokenizer=self.tokenizer, max_length=self.config['max_title_len']), 
+                                                        num_proc=8, remove_columns=["title"], batched=True)
+                    logger.info('********* title feat is ready ************')
 
 
             # make sure that no str field is in self.item_feat 
@@ -868,6 +869,87 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         self.predict_mode = False
         self.eval_mode = True
         return self.loader(batch_size, shuffle=False, num_workers=num_workers, ddp=ddp)
+    
+    def _map_all_ids(self):
+        # load token map cache 
+        if self.config.get('token_map_cache', None) is not None:
+            with open(self.config['token_map_cache'], 'rb') as f:
+                token_map = pickle.load(f)
+                self.field2tokens = token_map['field2tokens']
+                self.field2token2idx = token_map['field2token2idx']
+                self.field2tokens['sess_id'] = np.concatenate([['[PAD]'], np.arange(self.inter_feat['sess_id'].astype('int').max() + 1)])
+                self.field2token2idx['sess_id'] = {token : i for i, token in enumerate(self.field2tokens['sess_id'])}
+    
+        r"""Map tokens to index."""
+        fields_share_space = self._get_map_fields()
+        feat_list = self._get_feat_list()
+        for field_set in fields_share_space:
+            flag = self.config['network_feat_name'] is not None \
+                and (self.fuid in field_set or self.fiid in field_set)
+            field_feat = [(field, feat, idx) for field in field_set
+                            for idx, feat in enumerate(feat_list) if (feat is not None) and (field in feat)]
+            
+            # map token if token_map_cache is None
+            if self.config.get('token_map_cache', None) is None:
+                token_list = []
+                for field, feat, _ in field_feat:
+                    if 'seq' not in self.field2type[field]:
+                        token_list.append(feat[field].values)
+                    else:
+                        token_list.append(feat[field].agg(np.concatenate))
+                count_inter_user_or_item = sum(1 for x in field_feat if x[-1] < 3)
+                split_points = np.cumsum([len(_) for _ in token_list])
+                token_list = np.concatenate(token_list)
+                tid_list, tokens = pd.factorize(token_list)
+                max_user_or_item_id = np.max(
+                    tid_list[:split_points[count_inter_user_or_item-1]]) + 1 if flag else 0
+                if '[PAD]' not in set(tokens):
+                    tokens = np.insert(tokens, 0, '[PAD]')
+                    tid_list = np.split(tid_list + 1, split_points[:-1])
+                    token2id = {tok: i for (i, tok) in enumerate(tokens)}
+                    max_user_or_item_id += 1
+                else:
+                    token2id = {tok: i for (i, tok) in enumerate(tokens)}
+                    tid = token2id['[PAD]']
+                    tokens[tid] = tokens[0]
+                    token2id[tokens[0]] = tid
+                    tokens[0] = '[PAD]'
+                    token2id['[PAD]'] = 0
+                    idx_0, idx_1 = (tid_list == 0), (tid_list == tid)
+                    tid_list[idx_0], tid_list[idx_1] = tid, 0
+                    tid_list = np.split(tid_list, split_points[:-1])
+
+                for (field, feat, idx), _ in zip(field_feat, tid_list):
+                    if field not in self.field2tokens:
+                        if flag:
+                            if (field in [self.fuid, self.fiid]):
+                                self.field2tokens[field] = tokens[:max_user_or_item_id]
+                                self.field2token2idx[field] = {
+                                    tokens[i]: i for i in range(max_user_or_item_id)}
+                            else:
+                                tokens_ori = self._get_ori_token(idx-3, tokens)
+                                self.field2tokens[field] = tokens_ori
+                                self.field2token2idx[field] = {
+                                    t: i for i, t in enumerate(tokens_ori)}
+                        else:
+                            self.field2tokens[field] = tokens
+                            self.field2token2idx[field] = token2id
+                    if 'seq' not in self.field2type[field]:
+                        feat[field] = _
+                        feat[field] = feat[field].astype('Int64')
+                    else:
+                        sp_point = np.cumsum(feat[field].agg(len))[:-1]
+                        feat[field] = np.split(_, sp_point)
+            
+            else:
+                for field, feat, idx in field_feat:
+                    if 'seq' not in self.field2type[field]:
+                        feat[field] = feat[field].apply(lambda x : self.field2token2idx[field][x]).astype('Int64')
+                    else:
+                        flatten_field = feat[field].agg(np.concatenate)
+                        flatten_field = np.array([self.field2token2idx[field][x] for x in flatten_field]).astype('int64')
+                        sp_point = np.cumsum(feat[field].apply(len))[:-1]
+                        feat[field] = np.split(flatten_field, sp_point)
 
 
 class KDDCUPSessionDataset(KDDCUPSeqDataset): # don't cut session into slice 

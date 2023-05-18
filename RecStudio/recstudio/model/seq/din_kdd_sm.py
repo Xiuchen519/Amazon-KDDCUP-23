@@ -68,26 +68,27 @@ class DIN_KDD_SM(basemodel.BaseRanker):
         fc_mlp = model_config['fc_mlp']
         dropout_p = model_config['dropout']
         self.item_embedding = torch.nn.Embedding(train_data.num_items, d, 0)
+
+        if self.use_product_feature:
+            item_embedding_dim = 4 * d
+            if self.config['model']['use_price']:
+                item_embedding_dim += d 
+            if self.config['model']['use_color']:
+                item_embedding_dim += d 
+        else:
+            item_embedding_dim = d 
+            
         
         if self.config['model']['use_item_bias']:
             self.item_bias = torch.nn.Embedding(train_data.num_items, 1, padding_idx=0)
         
-        if self.use_product_feature:
-            self.activation_unit = AttentionLayer(
-                2*d, 6*d, mlp_layers=model_config['attention_mlp'], activation=act_f) # the position of key and query is wrong.
-            norm = [torch.nn.BatchNorm1d(2*d)] if model_config['batch_norm'] else []
-            norm.append(torch.nn.Linear(2*d, 2*d))
-            self.norm = torch.nn.Sequential(*norm)
-            self.dense_mlp = MLPModule(
-                [6*d]+fc_mlp, activation_func=act_f, dropout=dropout_p, batch_norm=model_config['batch_norm'])
-        else:
-            self.activation_unit = AttentionLayer(
-                d, 3*d, mlp_layers=model_config['attention_mlp'], activation=act_f) # the position of key and query is wrong.
-            norm = [torch.nn.BatchNorm1d(d)] if model_config['batch_norm'] else []
-            norm.append(torch.nn.Linear(d, d))
-            self.norm = torch.nn.Sequential(*norm)
-            self.dense_mlp = MLPModule(
-                [3*d]+fc_mlp, activation_func=act_f, dropout=dropout_p, batch_norm=model_config['batch_norm'])
+        self.activation_unit = AttentionLayer(
+            item_embedding_dim, 3*item_embedding_dim, mlp_layers=model_config['attention_mlp'], dropout=dropout_p, activation=act_f) # the position of key and query is wrong.
+        norm = [torch.nn.BatchNorm1d(item_embedding_dim)] if model_config['batch_norm'] else []
+        norm.append(torch.nn.Linear(item_embedding_dim, item_embedding_dim))
+        self.norm = torch.nn.Sequential(*norm)
+        self.dense_mlp = MLPModule(
+            [3*item_embedding_dim]+fc_mlp, activation_func=act_f, dropout=dropout_p, batch_norm=model_config['batch_norm'])
         
         self.fc = torch.nn.Linear(fc_mlp[-1], 1)
         self.softmax_fn = torch.nn.Softmax(dim=-1)
@@ -133,44 +134,90 @@ class DIN_KDD_SM(basemodel.BaseRanker):
             parameter.requires_grad = False 
 
 
+    # def get_feature_emb(self, batch, is_target=False):
+    #     if not is_target:
+    #         brand_emb = self.brand_embedding(batch['in_brand']) # [B, L, D]
+    #         material_emb = self.material_embedding(batch['in_material']) # [B, L, D]
+    #         author_emb = self.author_embedding(batch['in_author']) # [B, L, D]
+    #         feature_emb = brand_emb + material_emb + author_emb # [B, L, D]                    
+
+    #         if 'price' in self.fields:
+    #             price_emb = self.linear_price(batch['in_price'].unsqueeze(dim=-1)) # [B, L, D]
+    #             price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
+    #             feature_emb += price_emb
+
+    #         if 'color' in self.fields:
+    #             color_seq = batch['in_color'] # [B, L, N]
+    #             color_num_seq = batch['in_color_num'] # [B, L]
+    #             color_num_seq[color_num_seq == 0] = 1
+    #             color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, L, N, D] -> [B, L, D]
+    #             feature_emb += color_emb 
+
+    #     else:
+    #         brand_emb = self.brand_embedding(batch['brand']) # [B, D]
+    #         material_emb = self.material_embedding(batch['material']) # [B, D]
+    #         author_emb = self.author_embedding(batch['author']) # [B, D]
+    #         feature_emb = brand_emb + material_emb + author_emb
+
+    #         if 'price' in self.fields:
+    #             price_emb = self.linear_price(batch['price'].unsqueeze(dim=-1)) # [B, D]
+    #             price_emb = self.activate_price(self.norm_price(price_emb)) # [B, D]
+    #             feature_emb += price_emb
+
+    #         if 'color' in self.fields:
+    #             color_seq = batch['color'] # [B, N]
+    #             color_num_seq = batch['color_num'] # [B]
+    #             color_num_seq[color_num_seq == 0] = 1
+    #             color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, N, D] -> [B, D]
+    #             feature_emb += color_emb  
+
+    #     return feature_emb
+    
     def get_feature_emb(self, batch, is_target=False):
+        feature_emb_list = []
         if not is_target:
             brand_emb = self.brand_embedding(batch['in_brand']) # [B, L, D]
             material_emb = self.material_embedding(batch['in_material']) # [B, L, D]
             author_emb = self.author_embedding(batch['in_author']) # [B, L, D]
-            feature_emb = brand_emb + material_emb + author_emb # [B, L, D]                    
+            feature_emb_list.append(brand_emb)
+            feature_emb_list.append(material_emb)
+            feature_emb_list.append(author_emb)                    
 
             if 'price' in self.fields:
                 price_emb = self.linear_price(batch['in_price'].unsqueeze(dim=-1)) # [B, L, D]
                 price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
-                feature_emb += price_emb
+                feature_emb_list.append(price_emb)
 
             if 'color' in self.fields:
                 color_seq = batch['in_color'] # [B, L, N]
                 color_num_seq = batch['in_color_num'] # [B, L]
                 color_num_seq[color_num_seq == 0] = 1
                 color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, L, N, D] -> [B, L, D]
-                feature_emb += color_emb 
+                feature_emb_list.append(color_emb)
 
         else:
             brand_emb = self.brand_embedding(batch['brand']) # [B, D]
             material_emb = self.material_embedding(batch['material']) # [B, D]
             author_emb = self.author_embedding(batch['author']) # [B, D]
-            feature_emb = brand_emb + material_emb + author_emb
+            feature_emb_list.append(brand_emb)
+            feature_emb_list.append(material_emb)
+            feature_emb_list.append(author_emb)    
 
             if 'price' in self.fields:
                 price_emb = self.linear_price(batch['price'].unsqueeze(dim=-1)) # [B, D]
                 price_emb = self.activate_price(self.norm_price(price_emb)) # [B, D]
-                feature_emb += price_emb
+                feature_emb_list.append(price_emb)
+                
 
             if 'color' in self.fields:
                 color_seq = batch['color'] # [B, N]
                 color_num_seq = batch['color_num'] # [B]
                 color_num_seq[color_num_seq == 0] = 1
                 color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, N, D] -> [B, D]
-                feature_emb += color_emb  
+                feature_emb_list.append(color_emb)
 
-        return feature_emb
+        return torch.cat(feature_emb_list, dim=-1) # [B, L, N * D] or [B, N * D]
+
 
     def score(self, batch):
         seq_emb = self.item_embedding(batch['in_'+self.fiid]) # [B, L, D]
@@ -201,11 +248,11 @@ class DIN_KDD_SM(basemodel.BaseRanker):
 
         return score
 
-    # def _get_loss_func(self):
-    #     return torch.nn.BCELoss()
-
     def _get_loss_func(self):
-        return torch.nn.CrossEntropyLoss()
+        return torch.nn.BCELoss()
+
+    # def _get_loss_func(self):
+    #     return torch.nn.CrossEntropyLoss()
     
     # def forward(self, batch, test=False):
     #     num_sample = self.config['train']['num_candidates']
@@ -256,11 +303,38 @@ class DIN_KDD_SM(basemodel.BaseRanker):
             candidates = torch.cat([sasrec_candidates, co_graph_candidates], dim=-1) # [B, 2 * N]
         
         if self.config['train']['candidate_rand'] == True and test == False:
-            candidates_rand = self.sampler.forward(bs, num_sample_rand) # [B, N_RAND]
-            candidates = torch.cat([candidates, candidates_rand], dim=-1) # [B, N + N_RAND]
+            candidates_rand, _ = self.sampler.forward(bs, num_sample_rand) # [B, N_RAND]
+            candidates = torch.cat([candidates, candidates_rand.to(candidates.device)], dim=-1) # [B, N + N_RAND]
         
         return candidates
     
+    # def forward(self, batch, test=False):
+    #     all_candidates = self._get_candidates(batch, test=test)
+
+    #     if test:
+    #         candidates = all_candidates
+    #         labels = (all_candidates == batch[self.fiid].view(-1, 1)).float() # [B, N_CAND]
+    #         cand_scores = self.score_multi(batch, candidates) # [B, N_CAND]
+    #         cand_scores = self.softmax_fn(cand_scores)
+    #         return {'pos_score': cand_scores, 'label': labels}, candidates
+    #     else:        
+    #         candidates = all_candidates
+            
+    #         # replace ground truth in candidates 
+    #         pos_labels = (candidates == batch[self.fiid].view(-1, 1)).bool() # [B， N_CAND]
+    #         pos_2_rand = self.sampler.forward(pos_labels.sum().to(torch.int64).item(), 1)[0].squeeze().to(self._parameter_device)
+    #         candidates[pos_labels] = pos_2_rand
+
+    #         candidates = torch.cat([batch[self.fiid].view(-1, 1), candidates], dim=-1) # [B, N_CAND + 1]
+
+    #         cand_scores = self.score_multi(batch, candidates) # [B, N_CAND + 1]
+    #         return {'pos_score': cand_scores, 'label': cand_scores.new_zeros(batch[self.fiid].shape[0], dtype=torch.int64)}, None
+    
+    # def training_step(self, batch):
+    #     y_h, output = self.forward(batch)
+    #     loss = self.loss_fn(y_h['pos_score'], y_h['label'])
+    #     return loss
+
     def forward(self, batch, test=False):
         all_candidates = self._get_candidates(batch, test=test)
 
@@ -271,17 +345,12 @@ class DIN_KDD_SM(basemodel.BaseRanker):
             cand_scores = self.softmax_fn(cand_scores)
             return {'pos_score': cand_scores, 'label': labels}, candidates
         else:        
-            candidates = all_candidates
-            
-            # replace ground truth in candidates 
-            pos_labels = (candidates == batch[self.fiid].view(-1, 1)).bool() # [B， N_CAND]
-            pos_2_rand = self.sampler.forward(pos_labels.sum().to(torch.int64).item(), 1)[0].squeeze().to(self._parameter_device)
-            candidates[pos_labels] = pos_2_rand
-
-            candidates = torch.cat([batch[self.fiid].view(-1, 1), candidates], dim=-1) # [B, N_CAND + 1]
-
-            cand_scores = self.score_multi(batch, candidates) # [B, N_CAND + 1]
-            return {'pos_score': cand_scores, 'label': cand_scores.new_zeros(batch[self.fiid].shape[0], dtype=torch.int64)}, None
+            candidates = all_candidates # [B, N_CAND]
+            cand_scores = self.score_multi(batch, candidates) # [B, N_CAND]
+            cand_scores = self.softmax_fn(cand_scores)
+            pos_label = (candidates == batch[self.fiid].view(-1, 1)) # [B, N_CAND]
+            scores = cand_scores[pos_label] # [N]
+            return {'pos_score': scores, 'label': scores.new_ones(scores.shape[0])}, None
     
     def training_step(self, batch):
         y_h, output = self.forward(batch)
@@ -397,7 +466,7 @@ class DIN_KDD_SM(basemodel.BaseRanker):
 
         locale_index = batch['in_locale'][:, 0] # [B]
         multi_locale_index = locale_index.unsqueeze(1) \
-            .expand(-1, num_item, *tuple([-1 for i in range(len(locale_index.shape)-1)])) # [B, 1]
+            .expand(-1, num_item, *tuple([-1 for i in range(len(locale_index.shape)-1)])) # [B, num_item, 1]
         multi_locale_index = multi_locale_index.reshape(-1, *(locale_index.shape[1:]))
         items = self._get_item_feat(item_ids, multi_locale_index)
         if isinstance(items, torch.Tensor): # only id

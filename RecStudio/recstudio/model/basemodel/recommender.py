@@ -293,7 +293,7 @@ class Recommender(torch.nn.Module, abc.ABC):
             self.config.update(kwargs['config'])
 
         # if you don't use the config in ckpt, reset it here.
-        self.config['eval']['predict_topk'] = 150
+        # self.config['eval']['predict_topk'] = 150
         
         self.eval()
         res_df = self.predict_epoch(test_loader, predict_data, with_score)
@@ -388,7 +388,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         else:
             self.logger.info('\n'+color_dict(self.logged_metrics, self.run_mode == 'tune'))
 
-    def validation_epoch_end(self, outputs):
+    def validation_epoch_end(self, outputs, train_check=False):
         val_metrics = self.config['eval']['val_metrics']
         cutoff = self.config['eval']['cutoff']
         val_metric = eval.get_eval_metrics(val_metrics, cutoff, validation=True)
@@ -404,7 +404,15 @@ class Recommender(torch.nn.Module, abc.ABC):
             out = dict(zip(val_metric, out))
         elif isinstance(outputs[0][0], Dict):
             out = self._test_epoch_end(outputs)
-        self.log_dict(out)
+        
+        out_ = {}
+        if train_check == True:
+            for k, v in out.items():
+                out_['train_'+k] = v
+        else:
+            out_ = out     
+
+        self.log_dict(out_)
         return out
 
     def test_epoch_end(self, outputs):
@@ -456,7 +464,7 @@ class Recommender(torch.nn.Module, abc.ABC):
         init_methods = {
             'xavier_normal': init.xavier_normal_initialization,
             'xavier_uniform': init.xavier_uniform_initialization,
-            'normal': init.normal_initialization,
+            'normal': init.normal_initialization(self.config['train']['init_range']),
         }
         for name, module in self.named_children():
             if isinstance(module, Recommender):
@@ -622,6 +630,15 @@ class Recommender(torch.nn.Module, abc.ABC):
 
                 # validation procedure
                 tik_valid = time.time()
+                
+                if self.config['train'].get('train_check', False):
+                    trn_dataloaders, _ = self.current_epoch_trainloaders(nepoch)
+                    trn_dataloader = trn_dataloaders[0]
+                    self.eval()
+                    if nepoch % self.config['eval']['val_n_epoch'] == 0:
+                        train_val_output_list = self.validation_epoch(nepoch, trn_dataloader)
+                        self.validation_epoch_end(train_val_output_list, train_check=True)
+
                 if self.val_check:
                     self.eval()
                     if nepoch % self.config['eval']['val_n_epoch'] == 0:
@@ -759,6 +776,8 @@ class Recommender(torch.nn.Module, abc.ABC):
 
         for batch in tqdm(dataloader, dynamic_ncols=True):
             # data to device
+            if 'user_hist' not in batch and 'in_'+self.fiid in batch:
+                batch['user_hist'] = batch['in_'+self.fiid]
             batch = self._to_device(batch, self._parameter_device)
 
             # model validation results
@@ -941,6 +960,6 @@ class Recommender(torch.nn.Module, abc.ABC):
         #     self._update_item_vector()
         if hasattr(self, '_update_item_vector'):
             self._update_item_vector()
-        # if 'item_vector' not in ckpt['parameters']:
-            ckpt['parameters']['item_vector'] = self.item_vector
+            if 'item_vector' not in ckpt['parameters']:
+                ckpt['parameters']['item_vector'] = self.item_vector
         self.load_state_dict(ckpt['parameters'])

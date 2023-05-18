@@ -1,9 +1,10 @@
 data:
   split_mode: user
   split_ratio: [1.0]
+  max_seq_len: 10
 
 eval:
-  batch_size: 512
+  batch_size: 768
   predict_topk: 200
   cutoff: [100]
   test_metrics: [mrr, gauc, auc, logloss]
@@ -12,23 +13,24 @@ eval:
 model:
   activation: dice
   attention_mlp: [128, 64]
-  batch_norm: False
+  batch_norm: True
   dropout: 0.3
-  embed_dim: 64
+  embed_dim: 24
   fc_mlp: [256, 256, 256]
   use_product_feature: 1
   use_color: 1
   use_price: 0
   retriver_ckpt_path: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/saved/SASRec_Next/kdd_cup_2023_UK/A100/2023-04-14-12-06-32_UK_best.ckpt
   retriver_name: SASRec_Next
-  use_item_bias: False
+  use_item_bias: True
 
 train:
-  batch_size: 512
+  batch_size: 1024
   negative_count: 20
   candidate_rand: False
   candidate_strategy: sasrec  # [sasrec, co_graph, sasrec+co_graph]
   num_candidates: 100
   early_stop_patience: 5
+  weight_decay: 0.0
   
 

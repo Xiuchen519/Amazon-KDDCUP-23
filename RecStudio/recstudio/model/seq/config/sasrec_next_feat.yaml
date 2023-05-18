@@ -11,12 +11,18 @@ eval:
   topk: 300
 
 model:
-  hidden_size: 256
+  # transformer
+  embed_dim: 128
+  activation: 'gelu'
   dropout_rate: 0.5
+  hidden_size: 256
+  head_num: 2
+  layer_norm_eps: 1e-12
   layer_num: 1
   loss_func: softmax
-  embed_dim: 128
-
+  use_product_feature: True
+  use_color: 1
+  use_price: 0 
 
 train:
   batch_size: 1024
@@ -25,3 +31,7 @@ train:
   init_method: normal
   negative_count: ~
   scheduler: onplateau
+  pretrained_embed_file: ~
+  # pretrained_embed_file: /root/autodl-tmp/huangxu/Amazon-KDDCUP-23/co-occurrence_graph/graph_emb_128.pkl
+  # scheduler: onplateau
+  # weight_decay: 1e-6

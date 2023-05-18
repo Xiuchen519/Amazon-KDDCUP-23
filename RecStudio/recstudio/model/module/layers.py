@@ -333,6 +333,7 @@ class AttentionLayer(torch.nn.Module):
                 MLPModule(
                     mlp_layers=mlp_layers[:-1],
                     activation_func=activation,
+                    dropout=dropout,
                     bias=bias
                 ),
                 torch.nn.Linear(mlp_layers[-2], mlp_layers[-1])
