@@ -7,10 +7,12 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn, Tensor
+from torch.nn.utils.rnn import pad_sequence
 import torch.distributed as dist
 from transformers import PreTrainedModel, AutoModel, TrainingArguments
 from recstudio.model.scorer import InnerProductScorer
 from recstudio.model.loss_func import SoftmaxLoss
+from recstudio.model import module
 from arguments import ModelArguments
 from transformers.file_utils import ModelOutput
 
@@ -24,15 +26,118 @@ class EncoderOutput(ModelOutput): # if a attribute is None, then it will not be 
     loss: Optional[Tensor] = None
     scores: Optional[Tensor] = None
 
+class SASRecQueryEncoder(torch.nn.Module):
+    def __init__(
+            self, config, fiid, embed_dim, max_seq_len, n_head, hidden_size, dropout, activation, layer_norm_eps, n_layer,
+            bidirectional=False, training_pooling_type='last', eval_pooling_type='last') -> None:
+        super().__init__()
+        self.fiid = fiid
+        self.bidirectional = bidirectional
+        self.training_pooling_type = training_pooling_type
+        self.eval_pooling_type = eval_pooling_type
+        
+        transformer_encoder = torch.nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=n_head,
+            dim_feedforward=hidden_size,
+            dropout=dropout,
+            activation=activation,
+            layer_norm_eps=layer_norm_eps,
+            batch_first=True,
+            norm_first=False
+        )
+        self.transformer_layer = torch.nn.TransformerEncoder(
+            encoder_layer=transformer_encoder,
+            num_layers=n_layer,
+        )
+        self.dropout = torch.nn.Dropout(p=dropout)
+        self.training_pooling_layer = module.SeqPoolingLayer(pooling_type=self.training_pooling_type)
+        self.eval_pooling_layer = module.SeqPoolingLayer(pooling_type=self.eval_pooling_type)
+
+
+    def forward(self, batch, need_pooling=True):
+        user_hist = batch['in_'+self.fiid]
+        
+        if self.reverse_pos:
+            positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+            positions = positions.expand(user_hist.size(0), -1) # [B, L]
+            padding_pos = positions >= batch['seqlen'].unsqueeze(dim=-1) # [B, L]
+            positions = batch['seqlen'].unsqueeze(dim=-1) - positions # [B, L]
+            positions[padding_pos] = 0
+        else:
+            positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
+            positions = positions.unsqueeze(0).expand_as(user_hist)
+        
+        position_embs = self.position_emb(positions)
+        seq_embs = self.item_encoder(user_hist)
+
+        mask4padding = user_hist == 0  # BxL
+        L = user_hist.size(-1)
+        if not self.bidirectional:
+            attention_mask = torch.triu(torch.ones((L, L), dtype=torch.bool, device=user_hist.device), 1)
+        else:
+            attention_mask = torch.zeros((L, L), dtype=torch.bool, device=user_hist.device)
+        transformer_out = self.transformer_layer(
+            src=self.dropout(seq_embs+position_embs),
+            mask=attention_mask,
+            src_key_padding_mask=mask4padding)  # BxLxD
+
+        if need_pooling:
+            if self.training:
+                if self.training_pooling_type == 'mask':
+                    return self.training_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
+                else:
+                    return self.training_pooling_layer(transformer_out, batch['seqlen'])
+            else:
+                if self.eval_pooling_type == 'mask':
+                    return self.eval_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token'])
+                else:
+                    return self.eval_pooling_layer(transformer_out, batch['seqlen'])
+        else:
+            return transformer_out
+
 class SASRec_Bert(nn.Module):
     TRANSFORMER_CLS = AutoModel
     
     def __init__(self,
-                 xlm_roberta : PreTrainedModel, 
+                 args,
+                 train_data, 
+                 bert : PreTrainedModel, 
                  sentence_pooling_method : str = 'cls', 
                  negatives_x_device : bool = False) -> None:
         super().__init__()
-        self.xlm_roberta : PreTrainedModel = xlm_roberta
+        self.fiid = train_data.fiid
+
+        self.bert : PreTrainedModel = bert
+
+        self.item_embeddings = torch.nn.Embedding(train_data.num_items, args.embed_dim, padding_idx=0)
+        self.item_transform = torch.nn.Linear(768 + args.embed_dim, args.item_dim, bias=True)
+
+        # transformer
+        self.position_emb = torch.nn.Embedding(train_data.max_seq_len + 1, args.item_dim, padding_idx=0) # plus one for padding
+        self.bidirectional = args.bidirectional
+        self.training_pooling_type = args.training_pooling_type
+        self.eval_pooling_type = args.eval_pooling_type
+        
+        transformer_encoder = torch.nn.TransformerEncoderLayer(
+            d_model=args.embed_dim,
+            nhead=args.n_head,
+            dim_feedforward=args.hidden_size,
+            dropout=args.dropout,
+            activation=args.activation,
+            layer_norm_eps=args.layer_norm_eps,
+            batch_first=True,
+            norm_first=False
+        )
+        self.transformer_layer = torch.nn.TransformerEncoder(
+            encoder_layer=transformer_encoder,
+            num_layers=args.n_layer,
+        )
+        self.dropout = torch.nn.Dropout(p=args.dropout)
+        self.training_pooling_layer = module.SeqPoolingLayer(pooling_type=self.training_pooling_type)
+        self.eval_pooling_layer = module.SeqPoolingLayer(pooling_type=self.eval_pooling_type)
+
+
         self.loss_func = SoftmaxLoss()
         self.scorer = InnerProductScorer()
 
@@ -54,23 +159,86 @@ class SASRec_Bert(nn.Module):
         elif self.sentence_pooling_method == 'cls':
             return hidden_state[:, 0]
     
+    def encode_product_title(self, batch):
+        # product_title_input: [N, L_t]
+        # item_id: [B, L_seq]
 
-    def encode_query(self, query_title_input):
-        # query_title_input [B, L]
-        if query_title_input is None: # for predict
+        if batch['product_title_input'] is None: # for predict
             return None 
         
-        qry_out = self.xlm_roberta(**query_title_input, return_dict=True)
-        q_hidden = qry_out.last_hidden_state
-        q_reps = self.sentence_embedding(q_hidden, query_title_input['attention_mask'])
-        return q_reps.contiguous()
+        product_title_out = self.bert(**batch['product_title_input'], return_dict=True) # [N, L_t]
+        product_title_hidden = product_title_out.last_hidden_state
+        product_title_reps = self.sentence_embedding(product_title_hidden, batch['product_title_input']['attention_mask'])
+        return product_title_reps.contiguous()
+
+
+    def encode_query(self, batch):
+        # product_title_input: [N, L_t]
+        # item_id: [B, L_seq]
+        user_hist = batch['in_'+self.fiid]
+        seqlen = batch['seqlen'] # [B]
+        batch_size = user_hist.shape[0]
+
+        # get sequence embeddings
+        product_title_reps = self.encode_product_title(batch) # [N, D_bert]
+        
+        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+        positions = positions.expand(user_hist.size(0), -1) # [B, L]
+        padding_pos = positions >= batch['seqlen'].unsqueeze(dim=-1) # [B, L]
+        product_id_reps = self.item_embeddings(batch['in_'+self.fiid][padding_pos]) # [N, D_item_id]
+
+        product_reps = self.item_transform(torch.cat([product_title_reps, product_id_reps], dim=-1)) # [N, D_item]
+        seq_embs = torch.split(product_reps, seqlen, dim=0) 
+        seq_embs = pad_sequence(seq_embs, batch_first=True) # [B, L, D]
+        
+        # max_len = seq_reps.shape[1]
+        # seq_item_index = torch.arange(max_len, dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+        # seq_item_index = seq_item_index.expand([batch_size, -1]) # [B, L] 
+        # seq_item_index = seq_item_index - (max_len - seqlen.reshape(-1, 1)) # [B, L]
+        # seq_item_index = seq_item_index.unsqueeze(dim=-1).expand([-1, -1, seq_reps.shape[-1]]) # [B, L, D]
+        # padding_index = (seq_item_index < 0) 
+        # seq_item_index[padding_index] = 0
+
+        # seq_reps = torch.gather(seq_reps, dim=1, index=seq_item_index) # [B, L, D]
+        # seq_reps = seq_reps * padding_index # set reps of padding items with all zero vector and they don't require grad.
+
+        # get position embeddings 
+        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+        positions = positions.expand(user_hist.size(0), -1) # [B, L]
+        padding_pos = positions >= batch['seqlen'].unsqueeze(dim=-1) # [B, L]
+        positions = batch['seqlen'].unsqueeze(dim=-1) - positions # [B, L]
+        positions[padding_pos] = 0
+        position_embs = self.position_emb(positions)
+
+
+        mask4padding = user_hist == 0  # BxL
+        L = user_hist.size(-1)
+        if not self.bidirectional:
+            attention_mask = torch.triu(torch.ones((L, L), dtype=torch.bool, device=user_hist.device), 1)
+        else:
+            attention_mask = torch.zeros((L, L), dtype=torch.bool, device=user_hist.device)
+        transformer_out = self.transformer_layer(
+            src=self.dropout(seq_embs+position_embs),
+            mask=attention_mask,
+            src_key_padding_mask=mask4padding)  # BxLxD
+
+        if self.training:
+            if self.training_pooling_type == 'mask':
+                return self.training_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token']).contiguous()
+            else:
+                return self.training_pooling_layer(transformer_out, batch['seqlen']).contiguous()
+        else:
+            if self.eval_pooling_type == 'mask':
+                return self.eval_pooling_layer(transformer_out, batch['seqlen'], mask_token=batch['mask_token']).contiguous()
+            else:
+                return self.eval_pooling_layer(transformer_out, batch['seqlen']).contiguous()
 
 
     def encode_item(self, item_title_input):
         if item_title_input is None: # for predict
             return None 
         
-        item_out = self.xlm_roberta(**item_title_input, return_dict=True)
+        item_out = self.bert(**item_title_input, return_dict=True)
         item_hidden = item_out.last_hidden_state
         item_reps = self.sentence_embedding(item_hidden, item_title_input['attention_mask'])
         return item_reps.contiguous()
@@ -86,8 +254,8 @@ class SASRec_Bert(nn.Module):
         # in_title_input : input_ids : [B, L], merge titles of last five items
         # title_input : input_ids : [B, L]
         # neg_title_input : input_ids : [B * neg, L]
-        query_reps = self.encode_query(batch.get('in_title_input')) # [B, D] 
-        item_reps = self.encode_item(batch.get('title_input')) # [B, D]
+        query_reps = self.encode_query(batch) # [B, D] 
+        item_reps = self.encode_item(batch.get('product_title_input')) # [B, D]
 
         # for inference
         if query_reps is None or item_reps is None:

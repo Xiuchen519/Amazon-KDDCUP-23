@@ -1,4 +1,14 @@
 import sys
+from typing import Callable, Dict, List, Optional, Tuple, Union
+import torch
+from torch import nn
+from torch.utils.data import Dataset
+from transformers.data.data_collator import DataCollator
+from transformers.modeling_utils import PreTrainedModel
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from transformers.trainer_callback import TrainerCallback
+from transformers.trainer_utils import EvalPrediction
+from transformers.training_args import TrainingArguments
 sys.path = ['./RecStudio'] + sys.path
 from transformers.trainer import * 
 from recstudio.data.advance_dataset import KDDCUPSeqDataset, KDDCUPSessionDataset
@@ -29,10 +39,10 @@ class KDDCupTrainer(Trainer):
         train_sampler = self._get_train_sampler()
 
         self.train_dataset : KDDCUPSeqDataset
-        self.train_dataset.use_field = set(
-            [self.train_dataset.fuid, self.train_dataset.fiid, self.train_dataset.frating, 'locale', 'title',
-             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
-        )
+        # self.train_dataset.use_field = set(
+        #     [self.train_dataset.fuid, self.train_dataset.fiid, self.train_dataset.frating, 'locale', 'title',
+        #      'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
+        # )
         self.train_dataset.predict_mode = False 
         self.train_dataset.eval_mode = False 
         return DataLoader(self.train_dataset, 
@@ -48,11 +58,11 @@ class KDDCupTrainer(Trainer):
     def get_test_dataloader(self, test_dataset: Dataset) -> DataLoader:
         test_sampler = self._get_eval_sampler(test_dataset)
         # We use the same batch_size as for eval.
-        if isinstance(test_dataset, KDDCUPSessionDataset):
-            test_dataset.use_field = set(
-                [test_dataset.fuid, test_dataset.fiid, test_dataset.frating, 'locale', 'title',
-                'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
-            )
+        # if isinstance(test_dataset, KDDCUPSessionDataset):
+        #     test_dataset.use_field = set(
+        #         [test_dataset.fuid, test_dataset.fiid, test_dataset.frating, 'locale', 'title',
+        #         'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
+        #     )
         return DataLoader(
             test_dataset,
             sampler=test_sampler,

@@ -335,6 +335,7 @@ class Recommender(torch.nn.Module, abc.ABC):
     def encode_query(self, data, model_path=None, encode_data='valid', **kwargs):
 
         # get dataloader
+        self._set_data_field(data)
         data.drop_feat(self.fields)
         if encode_data == 'valid':
             data_loader = data.eval_loader(batch_size=self.config['eval']['batch_size'])

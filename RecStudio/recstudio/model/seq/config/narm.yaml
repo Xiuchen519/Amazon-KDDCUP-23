@@ -14,7 +14,7 @@ model:
   embed_dim: 128
   hidden_size: 256
   dropout_rate: [0.25, 0.5]
-  layer_num: 2
+  layer_num: 1
   loss_func: softmax
 
 train:

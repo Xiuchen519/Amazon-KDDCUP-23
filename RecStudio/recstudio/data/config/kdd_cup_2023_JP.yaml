@@ -17,7 +17,7 @@ user_feat_header: ~
 
 item_feat_name: [JP_processed_product_train.csv]
 # item_feat_field: [[*i, locale:token]]
-item_feat_field: [[*i, locale:token, title:str, price:float, brand:token, material:token, author:token, color:token_seq:"|"]]
+item_feat_field: [[*i, locale:token, price:float, brand:token, size:token, model:token, material:token, author:token, color:token_seq:"|", title:str, desc:str]]
 item_feat_header: 0
 
 use_fields: ~

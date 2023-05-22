@@ -19,7 +19,7 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.training_pooling_type = training_pooling_type
         self.eval_pooling_type = eval_pooling_type
         self.use_product_feature = use_product_feature
-        self.position_emb = torch.nn.Embedding(max_seq_len, 2*embed_dim if use_product_feature else embed_dim)
+        self.position_emb = torch.nn.Embedding(max_seq_len + 1, 2*embed_dim if use_product_feature else embed_dim)
         transformer_encoder = torch.nn.TransformerEncoderLayer(
             d_model=2*embed_dim if use_product_feature else embed_dim,
             nhead=n_head,
@@ -97,9 +97,14 @@ class SASRecQueryEncoder(torch.nn.Module):
 
     def forward(self, batch, need_pooling=True):
         user_hist = batch['in_'+self.fiid]
-        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device)
-        positions = positions.unsqueeze(0).expand_as(user_hist)
+
+        positions = torch.arange(user_hist.size(1), dtype=torch.long, device=user_hist.device).unsqueeze(dim=0) # [1, L]
+        positions = positions.expand(user_hist.size(0), -1) # [B, L]
+        padding_pos = positions >= batch['seqlen'].unsqueeze(dim=-1) # [B, L]
+        positions = batch['seqlen'].unsqueeze(dim=-1) - positions # [B, L]
+        positions[padding_pos] = 0
         position_embs = self.position_emb(positions)
+        
         seq_embs = self.item_encoder(user_hist)
 
         if self.use_product_feature:
@@ -247,11 +252,6 @@ class SASRec_Next_Feat(basemodel.BaseRetriever):
         assert emb.shape == embedding_layer.weight.shape
         embedding_layer.weight.data = emb
         torch.nn.init.constant_(embedding_layer.weight.data[embedding_layer.padding_idx], 0.)
-
-
-    # def _get_sampler(self, train_data):
-    #     r"""Uniform sampler is used as negative sampler."""
-    #     return None
 
     # def candidate_topk(self, batch, k, user_h=None, return_query=False):
     #     self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]

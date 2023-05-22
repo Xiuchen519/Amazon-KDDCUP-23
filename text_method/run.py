@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from trainer import KDDCupTrainer
-from sasrec_bert import SASRec_Bert
+from text_retriver import TextRetriver
 from arguments import ModelArguments, DataArguments, \
     SASRecBertTrainingArguments as TrainingArguments
 from data import KDDCupProductCollator
@@ -73,7 +73,7 @@ def main():
     logger.info('Config: %s', config)
 
     if training_args.do_train:
-        model = SASRec_Bert.build(
+        model = TextRetriver.build(
             model_args,
             training_args,
             config=config,
@@ -81,7 +81,7 @@ def main():
         )
 
     else:
-        model = SASRec_Bert.load(
+        model = TextRetriver.load(
             model_args.model_name_or_path,
             sentence_pooling_method=model_args.sentence_pooling_method,
             negatives_x_device=model_args.negatives_x_device
@@ -93,14 +93,24 @@ def main():
     file_conf = parser_yaml(data_args.dataset_config_path)
     data_conf.update(file_conf)
     data_specified_conf = { 
-        'max_title_len' : data_args.max_title_len,  
+        'max_title_len' : data_args.max_title_len,
+        'max_desc_len' : data_args.max_desc_len,
         'split_mode' : data_args.split_mode, 
         'split_ratio' : data_args.split_ratio, 
         'tokenizer' : model_args.tokenizer_name
     }
     data_conf.update(data_specified_conf)
 
-    datasets = KDDCUPSessionDataset.build_datasets(name='kdd_cup_2023', specific_config=data_conf)
+    datasets = KDDCUPSessionDataset.build_datasets(name='kdd_cup_2023_UK', specific_config=data_conf)
+
+    use_field_list = [datasets[0].fuid, datasets[0].fiid, datasets[0].frating, 'locale',
+            'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
+    if data_args.use_session_title: use_field_list.append('session_title')
+    if data_args.use_product_title: use_field_list.append('product_title')
+    if data_args.use_session_desc: use_field_list.append('session_desc')
+    if data_args.use_product_desc: use_field_list.append('product_desc')
+    datasets[0].use_field = set(use_field_list)
+    datasets[1].use_field = set(use_field_list)
 
     if training_args.do_train:
         train_dataset = datasets[0]
@@ -157,6 +167,7 @@ def main():
             elif training_args.prediction_on == 'test':
                 logging.info("*** Test dataset Prediction ***")
                 test_dataset = datasets[0].build_test_dataset(data_args.prediction_data_path)
+                test_dataset.use_field(use_field_list)
                 test_dataset.predict_mode = True # set mode to prediction.
                 test_dataset.eval_mode = False 
                 query_path = os.path.join(data_args.prediction_save_path, 'test_query_reps')

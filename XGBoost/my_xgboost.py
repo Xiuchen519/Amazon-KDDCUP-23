@@ -31,11 +31,20 @@ parser.add_argument('--features', nargs='+', type=str,
              'title_BM25_scores', 'desc_BM25_scores',
              'all_items_co_graph_count_0', 'normalized_all_items_co_graph_count_0',
              'seqmlp_scores', 'seqmlp_normalized_scores',
+             'narm_scores', 'normalized_narm_scores',
              'sess_avg_price', 'sess_locale'])
 parser.add_argument('--random_seed', type=int, default=42)
+parser.add_argument('--early_stop_patience', type=int, default=200)
 parser.add_argument('--merged_candidates_path', type=str, default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/XGBoost/candidates/merged_candidates_no_hist_feature.parquet')
 parser.add_argument('--gpu', type=int, default=0)
 args = parser.parse_args() 
+
+# make dir
+if not os.path.exists('.XGBoost/logs/'):
+    os.makedirs('.XGBoost/logs/')
+
+if not os.path.exists('.XGBoost/ckpt/'):
+    os.makedirs('.XGBoost/ckpt/')
 
 # set gpu
 os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
@@ -112,7 +121,7 @@ for fold,(train_idx, valid_idx) in enumerate(skf.split(candidates_with_features,
         dtrain=dtrain,
         evals=[(dtrain,'train'),(dvalid,'valid')],
         num_boost_round=10000,
-        early_stopping_rounds=200,
+        early_stopping_rounds=args.early_stop_patience,
         evals_result=res,
         verbose_eval=100)
     

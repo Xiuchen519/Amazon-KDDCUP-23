@@ -18,6 +18,7 @@ class NARMQueryEncoder(torch.nn.Module):
     def __init__(self, fiid, embed_dim, hidden_size, layer_num, dropout_rate: List, item_encoder=None) -> None:
         super().__init__()
         self.fiid = fiid
+        
         self.item_encoder = item_encoder
         self.gru_layer = torch.nn.Sequential(
             self.item_encoder,
@@ -28,6 +29,9 @@ class NARMQueryEncoder(torch.nn.Module):
                 num_layer=layer_num,
             )
         )
+        self.A_1 = torch.nn.Linear(hidden_size, hidden_size, bias=False)
+        self.A_2 = torch.nn.Linear(hidden_size, hidden_size, bias=False)
+
         self.gather_layer = module.SeqPoolingLayer(pooling_type='last')
         self.attn_layer = module.AttentionLayer(q_dim=hidden_size, mlp_layers=[hidden_size], bias=False)
 
@@ -37,8 +41,8 @@ class NARMQueryEncoder(torch.nn.Module):
         )
 
     def forward(self, batch):
-        gru_vec = self.gru_layer(batch['in_' + self.fiid])
-        c_global = h_t = self.gather_layer(gru_vec, batch['seqlen'])  # B x H
+        gru_vec = self.A_1(self.gru_layer(batch['in_' + self.fiid])) # B x L x H
+        c_global = h_t = self.A_2(self.gather_layer(gru_vec, batch['seqlen']))  # B x H
 
         c_local = self.attn_layer(query=h_t.unsqueeze(1), key=gru_vec, value=gru_vec,
                                   key_padding_mask=batch['in_' + self.fiid] == 0, need_weight=False).squeeze(1)  # B x H

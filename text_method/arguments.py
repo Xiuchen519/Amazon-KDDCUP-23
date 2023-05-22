@@ -34,7 +34,7 @@ class ModelArguments:
 class DataArguments:
 
     dataset_config_path: str = field(
-        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/RecStudio/recstudio/data/config/kdd_cup_2023.yaml',
+        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/RecStudio/recstudio/data/config/kdd_cup_2023_UK_bert.yaml',
         metadata={"help" : "Path of RecStudio Dataset config file."}
     )
 
@@ -57,10 +57,27 @@ class DataArguments:
         metadata={"help" : "Number of negative items for one postive item."}
     )
 
+    use_session_title: bool = field(default=False, metadata={"help" : "whether to use session title."})
+
+    use_product_title: bool = field(default=False, metadata={"help" : "whether to use product title."})
+
+    use_session_desc: bool = field(default=False, metadata={"help" : "whether to use session desc."})
+
+    use_product_desc: bool = field(default=False, metadata={"help" : "whether to use product desc."})
+
+
     max_title_len: int = field(
-        default=50, 
+        default=70, 
         metadata={
             "help": "The maximum total input sequence length after tokenization for product title. Sequences longer "
+                    "than this will be truncated, sequences shorter will be padded."
+        }
+    )
+
+    max_desc_len: int = field(
+        default=70, 
+        metadata={
+            "help": "The maximum total input sequence length after tokenization for product desc. Sequences longer "
                     "than this will be truncated, sequences shorter will be padded."
         }
     )

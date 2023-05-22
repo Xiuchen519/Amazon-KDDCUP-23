@@ -148,7 +148,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
 
             if 'tokenizer' in self.config:
                 if isinstance(config['tokenizer'], str):
-                    self.tokenizer = AutoTokenizer.from_pretrained(config['tokenizer'])
+                    self.tokenizer = AutoTokenizer.from_pretrained(config['tokenizer'], use_fast=False)
                 elif isinstance(config['tokenizer'], PreTrainedTokenizer):
                     self.tokenizer = config['tokenizer']
 
@@ -269,12 +269,19 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         for k, v in neg_item_feat.items():
             data['neg_' + k] = v # [neg] 
 
-        if 'title' in self.use_field:
+        if 'session_title' in self.use_field:
             locale_name = self.field2tokens['locale'][data['locale']]
 
-            data['neg_title_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
-            data['neg_title_input'] = [self.tokenizer.encode_plus(neg_title_ids, return_attention_mask=False, return_token_type_ids=False)
-                                       for neg_title_ids in data['neg_title_input']]
+            data['neg_session_title_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
+            data['neg_session_title_input'] = [self.tokenizer.encode_plus(neg_title_ids, return_attention_mask=False, return_token_type_ids=False)
+                                       for neg_title_ids in data['neg_session_title_input']]
+
+        if 'product_title' in self.use_field:
+            locale_name = self.field2tokens['locale'][data['locale']]
+
+            data['neg_product_title_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
+            data['neg_product_title_input'] = [self.tokenizer.encode_plus(neg_title_ids, return_attention_mask=False, return_token_type_ids=False)
+                                       for neg_title_ids in data['neg_product_title_input']]
             
         # delete index in data
         data_keys = list(data.keys())
@@ -328,17 +335,25 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                 last_item_candidates = self.item_candidates_feat[last_item] 
                 data['last_item_candidates'] = last_item_candidates['candidates'] # [300]
 
-            if 'title' in self.use_field:
+            if 'session_title' in self.use_field:
                 locale_name = self.field2tokens['locale'][source_data['locale'][0]]
 
-                source_data['title_input'] = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
-                res_input_ids = source_data['title_input'][0] 
-                for product_input_ids in source_data['title_input'][1 : ]:
+                source_data['session_title_input'] = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_input_ids = source_data['session_title_input'][0] 
+                for product_input_ids in source_data['session_title_input'][1 : ]:
                     res_input_ids.append(self.tokenizer.sep_token_id)
                     res_input_ids.extend(product_input_ids)
-                source_data['title_input'] = res_input_ids # List[int]
-                source_data['title_input'] = self.tokenizer.encode_plus(source_data['title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+                source_data['session_title_input'] = res_input_ids # List[int]
+                source_data['session_title_input'] = self.tokenizer.encode_plus(source_data['session_title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
 
+            if 'product_title' in self.use_field:
+                locale_name = self.field2tokens['locale'][source_data['locale'][0]]
+
+                source_data['product_title_input'] = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_input_ids = [] 
+                for product_input_ids in source_data['session_title_input']:
+                    res_input_ids.append(self.tokenizer.encode_plus(product_input_ids, return_attention_mask=False, return_token_type_ids=False))
+                source_data['session_title_input'] = res_input_ids # List[BatchEncoding]
 
             for k, v in source_data.items():
                 if k != self.fuid:
@@ -406,20 +421,32 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                 last_item_candidates = self.item_candidates_feat[last_item] 
                 data['last_item_candidates'] = last_item_candidates['candidates'] # [300]
             
-            if 'title' in self.use_field:
+            if 'session_title' in self.use_field:
                 locale_name = self.field2tokens['locale'][target_data['locale']]
 
-                source_data['title_input'] = self.title_feat[source_data[f'{locale_name}_index'].to(torch.int64)]['input_ids'] # List[List]
-                res_input_ids = source_data['title_input'][0] 
-                for product_input_ids in source_data['title_input'][1 : ]:
+                source_data['session_title_input'] = self.title_feat[source_data[f'{locale_name}_index'].to(torch.int64)]['input_ids'] # List[List]
+                res_input_ids = source_data['session_title_input'][0] 
+                for product_input_ids in source_data['session_title_input'][1 : ]:
                     res_input_ids.append(self.tokenizer.sep_token_id)
                     res_input_ids.extend(product_input_ids)
-                source_data['title_input'] = res_input_ids # List[int]
+                source_data['session_title_input'] = res_input_ids # List[int]
                 
-                target_data['title_input'] = self.title_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'] # List[int]
+                target_data['session_title_input'] = self.title_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'] # List[int]
 
-                source_data['title_input'] = self.tokenizer.encode_plus(source_data['title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
-                target_data['title_input'] = self.tokenizer.encode_plus(target_data['title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+                source_data['session_title_input'] = self.tokenizer.encode_plus(source_data['session_title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+                target_data['session_title_input'] = self.tokenizer.encode_plus(target_data['session_title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
+            if 'product_title' in self.use_field:
+                locale_name = self.field2tokens['locale'][target_data['locale']]
+
+                source_data['product_title_input'] = self.title_feat[source_data[f'{locale_name}_index'].to(torch.int64)]['input_ids'] # List[List]
+                res_input_ids = []
+                for product_input_ids in source_data['product_title_input']:
+                    res_input_ids.append(self.tokenizer.encode_plus(product_input_ids, return_attention_mask=False, return_token_type_ids=False))
+                source_data['session_title_input'] = res_input_ids # List[BatchEncoding]
+                
+                target_data['session_title_input'] = self.title_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'] # List[int]
+                target_data['session_title_input'] = self.tokenizer.encode_plus(target_data['session_title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
                 
             for n, d in zip(['in_', ''], [source_data, target_data]):
                 for k, v in d.items():
@@ -522,16 +549,19 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             logger.info('item index feat is ready.')
             
             if hasattr(self, 'tokenizer'):
-                if 'title' in self.item_feat:
-                    logger.info('********* start to create title feat ************')
-                    def tokenize_function(examples, tokenizer, max_length):
-                        if 'title' in examples:
-                            return tokenizer(examples['title'], 
+
+                def tokenize_function(examples, col_name, tokenizer, max_length):
+                        if col_name in examples:
+                            return tokenizer(examples[col_name], 
                                             add_special_tokens=False, # don't add special tokens when preprocess
                                             truncation=True, 
                                             max_length=max_length,
                                             return_attention_mask=False,
                                             return_token_type_ids=False)
+
+                if 'title' in self.item_feat:
+                    logger.info('********* start to create title feat ************')
+                    
                     not_title_columns = []
                     for col in self.item_feat.columns:
                         if 'product_id' not in col and 'title' not in col and 'locale' not in col:
@@ -539,9 +569,22 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                     self.title_feat = self.item_feat.drop(columns=not_title_columns) # no inplace, original item_feat is keeped.
                     self.title_feat['title'][self.title_feat['title'] == ''] = self.tokenizer.unk_token
                     self.title_feat = TFDataset.from_pandas(self.title_feat, preserve_index=False)
-                    self.title_feat = self.title_feat.map(partial(tokenize_function, tokenizer=self.tokenizer, max_length=self.config['max_title_len']), 
+                    self.title_feat = self.title_feat.map(partial(tokenize_function, col_name='title', tokenizer=self.tokenizer, max_length=self.config['max_title_len']), 
                                                         num_proc=8, remove_columns=["title"], batched=True)
                     logger.info('********* title feat is ready ************')
+
+                if 'desc' in self.item_feat:
+                    logger.info('********* start to create desc feat ************')
+                    not_desc_columns = []
+                    for col in self.item_feat.columns:
+                        if 'product_id' not in col and 'desc' not in col and 'locale' not in col:
+                            not_desc_columns.append(col)
+                    self.desc_feat = self.item_feat.drop(columns=not_desc_columns) # no inplace, original item_feat is keeped.
+                    self.desc_feat['desc'][self.desc_feat['desc'] == ''] = self.tokenizer.unk_token
+                    self.desc_feat = TFDataset.from_pandas(self.desc_feat, preserve_index=False)
+                    self.desc_feat = self.desc_feat.map(partial(tokenize_function, col_name='desc', tokenizer=self.tokenizer, max_length=self.config['max_desc_len']), 
+                                                        num_proc=8, remove_columns=["desc"], batched=True)
+                    logger.info('********* desc feat is ready ************')
 
 
             # make sure that no str field is in self.item_feat 
