@@ -1,6 +1,6 @@
 from typing import Dict
 import torch
-from RecStudio.recstudio.ann.sampler import Dict
+# from RecStudio.recstudio.ann.sampler import Dict
 from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import functional as recfn

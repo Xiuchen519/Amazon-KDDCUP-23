@@ -179,16 +179,6 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
             os.makedirs(os.path.dirname(candidates_path))
         res_df.to_parquet(candidates_path, engine='pyarrow')
         model.logger.info(f'Candidates recall is finished, results are saved in {candidates_path}.')
-        
-    elif args.do_clean_train == True:
-        model.logger = logger
-        model._init_model(datasets[0])
-        model._accelerate()
-        clean_flag = model.filter_dirty_data(datasets[0], model_path=model_path)
-        save_path = time.strftime(f"./data_for_recstudio/clean_flag_%Y-%m-%d-%H-%M-%S.pkl", time.localtime())
-        with open(save_path, 'wb') as f:
-            pickle.dump(np.array(clean_flag), f)
-        logger.info(f"clean flag is saved in {save_path}!")
 
     elif args.do_encode_query == True:
         # init model 

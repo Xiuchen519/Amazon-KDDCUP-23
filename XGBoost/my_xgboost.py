@@ -20,19 +20,23 @@ parser.add_argument('--colsample', type=float, default=0.5)
 parser.add_argument('--learning_rate', type=float, default=0.1)
 parser.add_argument('--features', nargs='+', type=str, 
     default=['product_freq', 'product_price',
-             'sasrec_scores_2', 'sasrec_normalized_scores_2', 
-             'sasrec_scores_3', 'sasrec_normalized_scores_3', 
-             'gru4rec_scores', 'gru4rec_normalized_scores',
-             'gru4rec_scores_2', 'gru4rec_normalized_scores_2',
-             'roberta_scores', 'roberta_normalized_scores',
+             'sasrec_scores_2', 'normalized_sasrec_scores_2', 
+             'sasrec_scores_3', 'normalized_sasrec_scores_3', 
+             'gru4rec_scores', 'normalized_gru4rec_scores',
+             'gru4rec_scores_2', 'normalized_gru4rec_scores_2',
+             'roberta_scores', 'normalized_roberta_scores',
              'co_graph_counts_0', 'normalized_co_graph_counts_0',
              'co_graph_counts_1', 'normalized_co_graph_counts_1',
              'co_graph_counts_2', 'normalized_co_graph_counts_2',
              'title_BM25_scores', 'desc_BM25_scores',
              'all_items_co_graph_count_0', 'normalized_all_items_co_graph_count_0',
-             'seqmlp_scores', 'seqmlp_normalized_scores',
+             'all_items_co_graph_count_1', 'normalized_all_items_co_graph_count_1',
+             'all_items_co_graph_count_2', 'normalized_all_items_co_graph_count_2',
+             'seqmlp_scores', 'normalized_seqmlp_scores',
              'narm_scores', 'normalized_narm_scores',
+             'sasrec_feat_scores', 'normalized_sasrec_feat_scores',
              'sess_avg_price', 'sess_locale'])
+
 parser.add_argument('--random_seed', type=int, default=42)
 parser.add_argument('--early_stop_patience', type=int, default=200)
 parser.add_argument('--merged_candidates_path', type=str, default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/XGBoost/candidates/merged_candidates_no_hist_feature.parquet')
