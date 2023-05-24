@@ -39,7 +39,7 @@ class DataArguments:
     )
 
     dataset_config_path: str = field(
-        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/RecStudio/recstudio/data/config/kdd_cup_2023_roberta.yaml',
+        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/RecStudio/recstudio/data/config/kdd_cup_2023_UK_bert.yaml',
         metadata={"help" : "Path of RecStudio Dataset config file."}
     )
 
@@ -72,7 +72,7 @@ class DataArguments:
 
 
     max_title_len: int = field(
-        default=50, 
+        default=70, 
         metadata={
             "help": "The maximum total input sequence length after tokenization for product title. Sequences longer "
                     "than this will be truncated, sequences shorter will be padded."

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from trainer import KDDCupTrainer
 from text_retriver import TextRetriver
-from arguments import ModelArguments, DataArguments, \
+from arguments_bert import ModelArguments, DataArguments, \
     SASRecBertTrainingArguments as TrainingArguments
 from data import KDDCupProductCollator
 from transformers import AutoConfig, AutoTokenizer
@@ -167,7 +167,7 @@ def main():
             elif training_args.prediction_on == 'test':
                 logging.info("*** Test dataset Prediction ***")
                 test_dataset = datasets[0].build_test_dataset(data_args.prediction_data_path)
-                test_dataset.use_field = set(use_field_list)
+                test_dataset.use_field(use_field_list)
                 test_dataset.predict_mode = True # set mode to prediction.
                 test_dataset.eval_mode = False 
                 query_path = os.path.join(data_args.prediction_save_path, 'test_query_reps')

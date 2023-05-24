@@ -167,6 +167,7 @@ scripts
 # text method 
 /text_method/roberta_results
 /text_method/ckpt
+/text_method/phase2_task1_test_results_epoch_4
 
 # XGBoost
 /XGBoost/ckpt
