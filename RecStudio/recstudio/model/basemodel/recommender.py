@@ -803,7 +803,7 @@ class Recommender(torch.nn.Module, abc.ABC):
                 #
                 for opt in optimizers:
                     if self.config['train']['grad_clip_norm'] is not None:
-                        clip_grad_norm_(opt['optimizer'].params, self.config['train']['grad_clip_norm'])
+                        clip_grad_norm_(opt['optimizer'].param_groups[0]['params'], self.config['train']['grad_clip_norm'])
                     #
                     if opt is not None:
                         opt['optimizer'].step()

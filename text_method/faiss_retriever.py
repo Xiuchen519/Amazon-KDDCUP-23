@@ -85,12 +85,10 @@ def load_datasets_from_cache(data_dir):
     return datasets 
 
 
-def search_by_faiss(query_reps_path, item_reps_path, save_file, batch_size=512, depth=150, use_gpu=False):
+def search_by_faiss(query_reps_path, item_reps_path, dataset_cache_path, save_file, batch_size=512, depth=150, use_gpu=False):
     p_reps = np.load(os.path.join(item_reps_path, 'item.npy'))
     p_reps = np.array(p_reps).astype('float32')
-    dataset = load_datasets_from_cache(
-        '/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/.recstudio/cache/f30c8c1234f63ba5c60a8b7814777f60'
-    )[0]
+    dataset = load_datasets_from_cache(dataset_cache_path)[0]
     item_pos2id = dataset.title_feat['product_id']
     item_id2token = dataset.field2tokens['product_id']
     print("shape of item", np.shape(p_reps))

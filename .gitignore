@@ -143,10 +143,12 @@ datasets/*
 /data_for_recstudio/*.csv
 /data_for_recstudio/*.ftr
 /data_for_recstudio/*.pkl
+/data_for_recstudio/*.npy
 /best_ckpt
 /predictions
 *.parquet
 
+*.npy
 *.gph
 *.csv
 *.ftr
@@ -165,14 +167,15 @@ scripts
 /ensemble/*.npy
 
 # text method 
-/text_method/roberta_results
+/text_method/results
 /text_method/ckpt
-/text_method/phase2_task1_test_results_epoch_4
 
 # XGBoost
 /XGBoost/ckpt
+/XGBoost/cat_ckpt
 /XGBoost/logs
 /XGBoost/candidates
+/catboost_info/ 
 
 # candidates
 /candidates/query_embeddings

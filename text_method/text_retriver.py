@@ -1,7 +1,7 @@
 import sys 
 sys.path = ['./RecStudio'] + sys.path
 import os 
-from typing import Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 import logging 
 from dataclasses import dataclass
 
@@ -28,10 +28,15 @@ class TextRetriver(nn.Module):
     TRANSFORMER_CLS = AutoModel
     
     def __init__(self,
+                 text_field: str, 
                  bert_model : PreTrainedModel, 
                  sentence_pooling_method : str = 'cls', 
                  negatives_x_device : bool = False) -> None:
         super().__init__()
+        self.text_field = text_field
+
+        self._keys_to_ignore_on_save = None
+
         self.bert_model : PreTrainedModel = bert_model
         self.loss_func = SoftmaxLoss()
         self.scorer = InnerProductScorer()
@@ -86,8 +91,8 @@ class TextRetriver(nn.Module):
         # in_title_input : input_ids : [B, L], merge titles of last five items
         # title_input : input_ids : [B, L]
         # neg_title_input : input_ids : [B * neg, L]
-        query_reps = self.encode_query(batch.get('in_session_title_input')) # [B, D] 
-        item_reps = self.encode_item(batch.get('session_title_input')) # [B, D]
+        query_reps = self.encode_query(batch.get('in_'+self.text_field)) # [B, D] 
+        item_reps = self.encode_item(batch.get(self.text_field)) # [B, D]
 
         # for inference
         if query_reps is None or item_reps is None:
@@ -99,7 +104,7 @@ class TextRetriver(nn.Module):
             )
         
         if self.training:
-            neg_item_reps = self.encode_item(batch['neg_session_title_input']) # [B * neg, D]
+            neg_item_reps = self.encode_item(batch['neg_'+self.text_field]) # [B * neg, D]
             if self.negatives_x_device:
                 all_query_reps = self._dist_gather_tensor(query_reps) # [B * num_device, D]
                 all_item_reps = self._dist_gather_tensor(item_reps) # [B * num_device, D]
@@ -142,6 +147,7 @@ class TextRetriver(nn.Module):
     @classmethod
     def build(
             cls,
+            text_field: str, 
             model_args: ModelArguments,
             train_args: TrainingArguments,
             **hf_kwargs,
@@ -152,6 +158,7 @@ class TextRetriver(nn.Module):
         sentence_pooling_method = model_args.sentence_pooling_method
         negatives_x_device = model_args.negatives_x_device
         model = cls(
+            text_field=text_field,
             bert_model=bert_model, 
             sentence_pooling_method=sentence_pooling_method,
             negatives_x_device=negatives_x_device
@@ -162,6 +169,7 @@ class TextRetriver(nn.Module):
     @classmethod
     def load(
             cls,
+            text_field,
             model_name_or_path,
             sentence_pooling_method,
             negatives_x_device,
@@ -175,11 +183,16 @@ class TextRetriver(nn.Module):
         )
        
         model = cls(
+            text_field=text_field,
             bert_model=bert_model,  
             sentence_pooling_method=sentence_pooling_method,
             negatives_x_device=negatives_x_device
         )
         return model
+    
+    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
+        # load local
+        return self.bert_model.load_state_dict(state_dict, strict)
 
     def save(self, output_dir: str):
         self.bert_model.save_pretrained(output_dir)

@@ -282,6 +282,28 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             data['neg_product_title_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
             data['neg_product_title_input'] = [self.tokenizer.encode_plus(neg_title_ids, return_attention_mask=False, return_token_type_ids=False)
                                        for neg_title_ids in data['neg_product_title_input']]
+
+        if 'session_text' in self.use_field:
+            locale_name = self.field2tokens['locale'][data['locale']]
+
+            desc_list = self.desc_feat[neg_item_feat[f'{locale_name}_index']]['input_ids']
+            data['neg_session_text_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
+            for i in range(len(data['neg_session_text_input'])):
+                data['neg_session_text_input'][i].append(self.tokenizer.sep_token_id)
+                data['neg_session_text_input'][i].extend(desc_list[i])
+            data['neg_session_text_input'] = [self.tokenizer.encode_plus(neg_text_ids, return_attention_mask=False, return_token_type_ids=False)
+                                       for neg_text_ids in data['neg_session_text_input']]
+
+        if 'product_text' in self.use_field:
+            locale_name = self.field2tokens['locale'][data['locale']]
+
+            desc_list = self.desc_feat[neg_item_feat[f'{locale_name}_index']]['input_ids']
+            data['neg_product_text_input'] = self.title_feat[neg_item_feat[f'{locale_name}_index']]['input_ids'] # List[List]
+            for i in range(len(data['neg_product_text_input'])):
+                data['neg_product_text_input'][i].append(self.tokenizer.sep_token_id)
+                data['neg_product_text_input'][i].extend(desc_list[i])
+            data['neg_product_text_input'] = [self.tokenizer.encode_plus(neg_text_ids, return_attention_mask=False, return_token_type_ids=False)
+                                       for neg_text_ids in data['neg_product_text_input']]
             
         # delete index in data
         data_keys = list(data.keys())
@@ -354,6 +376,37 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                 for product_input_ids in source_data['session_title_input']:
                     res_input_ids.append(self.tokenizer.encode_plus(product_input_ids, return_attention_mask=False, return_token_type_ids=False))
                 source_data['session_title_input'] = res_input_ids # List[BatchEncoding]
+
+            if 'session_text' in self.use_field:
+                locale_name = self.field2tokens['locale'][source_data['locale'][0]]
+
+                title_list = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                desc_list = self.desc_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_input_ids = title_list[0] 
+                res_input_ids.append(self.tokenizer.sep_token_id)
+                res_input_ids.extend(desc_list[0])
+                for i in range(1, len(title_list)):
+                    res_input_ids.append(self.tokenizer.sep_token_id)
+                    res_input_ids.extend(title_list[i])
+                    res_input_ids.append(self.tokenizer.sep_token_id)
+                    res_input_ids.extend(desc_list[i])
+
+                source_data['session_text_input'] = res_input_ids # List[int]
+                source_data['session_text_input'] = self.tokenizer.encode_plus(source_data['session_text_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
+            if 'product_text' in self.use_field:
+                locale_name = self.field2tokens['locale'][source_data['locale'][0]]
+
+                title_list = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                desc_list = self.desc_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_text_input = [] 
+                for i in range(0, len(title_list)):
+                    text_input_ids = title_list[i] 
+                    text_input_ids.append(self.tokenizer.sep_token_id)
+                    text_input_ids.extend(desc_list[i])
+                    res_text_input.append(self.tokenizer.encode_plus(text_input_ids, return_attention_mask=False, return_token_type_ids=False))
+                source_data['product_text_input'] = res_text_input # List[BatchEncoding]
+
 
             for k, v in source_data.items():
                 if k != self.fuid:
@@ -447,6 +500,50 @@ class KDDCUPSeqDataset(SessionSliceDataset):
                 
                 target_data['session_title_input'] = self.title_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'] # List[int]
                 target_data['session_title_input'] = self.tokenizer.encode_plus(target_data['session_title_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
+
+            if 'session_text' in self.use_field:
+                locale_name = self.field2tokens['locale'][target_data['locale']]
+
+                title_list = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                desc_list = self.desc_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_input_ids = title_list[0] 
+                res_input_ids.append(self.tokenizer.sep_token_id)
+                res_input_ids.extend(desc_list[0])
+                for i in range(1, len(title_list)):
+                    res_input_ids.append(self.tokenizer.sep_token_id)
+                    res_input_ids.extend(title_list[i])
+                    res_input_ids.append(self.tokenizer.sep_token_id)
+                    res_input_ids.extend(desc_list[i])
+
+                source_data['session_text_input'] = res_input_ids # List[int]
+                source_data['session_text_input'] = self.tokenizer.encode_plus(source_data['session_text_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
+                target_data['session_text_input'] = self.title_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'] # List[int]
+                target_desc = self.desc_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'] # List[int]
+                target_data['session_text_input'].append(self.tokenizer.sep_token_id)
+                target_data['session_text_input'].extend(target_desc)
+                target_data['session_text_input'] = self.tokenizer.encode_plus(target_data['session_text_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
+            if 'product_text' in self.use_field:
+                locale_name = self.field2tokens['locale'][target_data['locale']]
+
+                title_list = self.title_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                desc_list = self.desc_feat[source_data[f'{locale_name}_index']]['input_ids'] # List[List]
+                res_text_input = [] 
+                for i in range(0, len(title_list)):
+                    text_input_ids = title_list[i] 
+                    text_input_ids.append(self.tokenizer.sep_token_id)
+                    text_input_ids.extend(desc_list[i])
+                    res_text_input.append(self.tokenizer.encode_plus(text_input_ids, return_attention_mask=False, return_token_type_ids=False))
+                source_data['product_text_input'] = res_text_input # List[BatchEncoding]
+                
+                target_data['product_text_input'] = self.title_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids']
+                target_data['product_text_input'].append(self.tokenizer.sep_token_id)
+                target_data['product_text_input'].extend(self.desc_feat[target_data[f'{locale_name}_index'].to(torch.int64).item()]['input_ids'])
+
+                target_data['product_text_input'] = self.tokenizer.encode_plus(target_data['product_text_input'], return_attention_mask=False, return_token_type_ids=False) # BatchEncoding
+
                 
             for n, d in zip(['in_', ''], [source_data, target_data]):
                 for k, v in d.items():
@@ -595,7 +692,7 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             self.item_feat = self.item_index_feat
         else:
             self.item_feat = pd.DataFrame(
-                {self.fiid: np.arange(self.num_items)})
+                {self.fiid: np.arange(self.num_items)})            
             
         if self.config['item_candidates_path'] is not None:
             def map_token_2_id(token):
@@ -655,7 +752,8 @@ class KDDCUPSeqDataset(SessionSliceDataset):
             fields = set(keep_fields)
             fields.add(self.frating)
             for feat in feat_list:
-                feat.del_fields(fields)
+                if isinstance(feat, TensorFrame):
+                    feat.del_fields(fields)
             # if 'user_hist' in fields:
             #     self.user_feat.add_field('user_hist', self.user_hist) # user_hist is not added here to reduce space 
             if 'item_hist' in fields:
@@ -811,17 +909,24 @@ class KDDCUPSeqDataset(SessionSliceDataset):
         return test_dataset
 
     # load valid dataset
-    def build_valid_dataset(self, data_dir, field_sep):
+    def build_valid_dataset(self, data_dir, field_sep, specified_path=False):
 
         # load valid feat
-        valid_inter_feat_path = os.path.join(
-            data_dir, self.config['valid_inter_feat_name'])
-        valid_inter_feat = super()._load_feat(
-            feat_path=valid_inter_feat_path, 
-            header=self.config['inter_feat_header'], 
-            sep=field_sep,
-            feat_cols=self.config['inter_feat_field'])
-        
+        if specified_path:
+            valid_inter_feat = super()._load_feat(
+                feat_path=data_dir, 
+                header=self.config['inter_feat_header'], 
+                sep=field_sep,
+                feat_cols=self.config['inter_feat_field'])
+        else:
+            valid_inter_feat_path = os.path.join(
+                data_dir, self.config['valid_inter_feat_name'])
+            valid_inter_feat = super()._load_feat(
+                feat_path=valid_inter_feat_path, 
+                header=self.config['inter_feat_header'], 
+                sep=field_sep,
+                feat_cols=self.config['inter_feat_field'])
+            
         if self.frating is None:
             self.frating = 'rating'
             self.field2type[self.frating] = 'float'

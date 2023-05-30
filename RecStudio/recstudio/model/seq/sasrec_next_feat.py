@@ -4,6 +4,8 @@ from recstudio.ann import sampler
 from recstudio.data import dataset, advance_dataset
 from recstudio.model.module import functional as recfn
 from recstudio.model import basemodel, loss_func, module, scorer
+import time
+import logging 
 
 
 class SASRecQueryEncoder(torch.nn.Module):
@@ -14,14 +16,14 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.fiid = fiid
         self.use_fields = train_data.use_field
         self.model_config = model_config
-        self.item_encoder = item_encoder
+        self.item_encoder : SASRecFeatItemEncoder = item_encoder
         self.bidirectional = bidirectional
         self.training_pooling_type = training_pooling_type
         self.eval_pooling_type = eval_pooling_type
         self.use_product_feature = use_product_feature
-        self.position_emb = torch.nn.Embedding(max_seq_len + 1, 2*embed_dim if use_product_feature else embed_dim)
+        self.position_emb = torch.nn.Embedding(max_seq_len + 1, embed_dim if use_product_feature else embed_dim)
         transformer_encoder = torch.nn.TransformerEncoderLayer(
-            d_model=2*embed_dim if use_product_feature else embed_dim,
+            d_model=embed_dim if use_product_feature else embed_dim,
             nhead=n_head,
             dim_feedforward=hidden_size,
             dropout=dropout,
@@ -38,62 +40,6 @@ class SASRecQueryEncoder(torch.nn.Module):
         self.training_pooling_layer = module.SeqPoolingLayer(pooling_type=self.training_pooling_type)
         self.eval_pooling_layer = module.SeqPoolingLayer(pooling_type=self.eval_pooling_type)
 
-        if self.use_product_feature:
-            # price embedding
-            if self.model_config['use_price']:
-                self.linear_price = torch.nn.Linear(1, embed_dim, bias=False)
-                self.norm_price = torch.nn.BatchNorm1d(embed_dim)
-                self.activate_price = torch.nn.ReLU()
-            # brand embedding 
-            self.brand_embedding = torch.nn.Embedding(train_data.num_values('brand'), embed_dim, padding_idx=0)
-            # material embedding 
-            self.material_embedding = torch.nn.Embedding(train_data.num_values('material'), embed_dim, padding_idx=0)
-            # author embedding 
-            self.author_embedding = torch.nn.Embedding(train_data.num_values('author'), embed_dim, padding_idx=0)
-            # color embedding 
-            if self.model_config['use_color']:
-                self.color_embedding = torch.nn.Embedding(train_data.num_values('color'), embed_dim, padding_idx=0)
-
-            self.fc_layer = torch.nn.Linear(2 * embed_dim, embed_dim)
-
-    def get_feature_emb(self, batch, is_target=False):
-        if not is_target:
-            brand_emb = self.brand_embedding(batch['in_brand']) # [B, L, D]
-            material_emb = self.material_embedding(batch['in_material']) # [B, L, D]
-            author_emb = self.author_embedding(batch['in_author']) # [B, L, D]
-            feature_emb = brand_emb + material_emb + author_emb # [B, L, D]                    
-
-            if 'price' in self.use_fields:
-                price_emb = self.linear_price(batch['in_price'].unsqueeze(dim=-1)) # [B, L, D]
-                price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
-                feature_emb += price_emb
-
-            if 'color' in self.use_fields:
-                color_seq = batch['in_color'] # [B, L, N]
-                color_num_seq = batch['in_color_num'] # [B, L]
-                color_num_seq[color_num_seq == 0] = 1
-                color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, L, N, D] -> [B, L, D]
-                feature_emb += color_emb 
-
-        else:
-            brand_emb = self.brand_embedding(batch['brand']) # [B, D]
-            material_emb = self.material_embedding(batch['material']) # [B, D]
-            author_emb = self.author_embedding(batch['author']) # [B, D]
-            feature_emb = brand_emb + material_emb + author_emb
-
-            if 'price' in self.use_fields:
-                price_emb = self.linear_price(batch['price'].unsqueeze(dim=-1)) # [B, D]
-                price_emb = self.activate_price(self.norm_price(price_emb)) # [B, D]
-                feature_emb += price_emb
-
-            if 'color' in self.use_fields:
-                color_seq = batch['color'] # [B, N]
-                color_num_seq = batch['color_num'] # [B]
-                color_num_seq[color_num_seq == 0] = 1
-                color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, N, D] -> [B, D]
-                feature_emb += color_emb  
-
-        return feature_emb
 
     def forward(self, batch, need_pooling=True):
         user_hist = batch['in_'+self.fiid]
@@ -105,13 +51,8 @@ class SASRecQueryEncoder(torch.nn.Module):
         positions[padding_pos] = 0
         position_embs = self.position_emb(positions)
         
-        seq_embs = self.item_encoder(user_hist)
-
-        if self.use_product_feature:
-            feature_embs = self.get_feature_emb(batch, is_target=False) # [B, L, D]
-            input_embs = torch.concat([seq_embs, feature_embs], dim=-1) + position_embs # [B, L, 2 * D]
-        else:
-            input_embs = seq_embs + position_embs # [B, L, D]
+        seq_embs = self.item_encoder(batch, is_target=False)
+        input_embs = seq_embs + position_embs # [B, L, D]
 
         mask4padding = user_hist == 0  # BxL
         L = user_hist.size(-1)
@@ -138,7 +79,97 @@ class SASRecQueryEncoder(torch.nn.Module):
         else:
             transformer_out = transformer_out
         
-        return self.fc_layer(transformer_out)
+        return transformer_out
+
+
+class SASRecFeatItemEncoder(torch.nn.Module):
+
+    def __init__(self, train_data, model_config, embed_dim, use_product_feature=True) -> None:
+        super().__init__()
+        self.logger = logging.getLogger('recstudio')
+        self.fiid = train_data.fiid
+        self.use_fields = train_data.use_field
+        self.model_config = model_config
+        self.use_product_feature = use_product_feature
+
+        self.item_emb = torch.nn.Embedding(train_data.num_items, embed_dim, padding_idx=0)
+        if self.use_product_feature:
+            # price embedding
+            if self.model_config['use_price']:
+                self.linear_price = torch.nn.Linear(1, embed_dim, bias=False)
+                self.norm_price = torch.nn.BatchNorm1d(embed_dim)
+                self.activate_price = torch.nn.ReLU()
+            # brand embedding 
+            self.brand_embedding = torch.nn.Embedding(train_data.num_values('brand'), embed_dim, padding_idx=0)
+            # material embedding 
+            self.material_embedding = torch.nn.Embedding(train_data.num_values('material'), embed_dim, padding_idx=0)
+            # author embedding 
+            self.author_embedding = torch.nn.Embedding(train_data.num_values('author'), embed_dim, padding_idx=0)
+            # color embedding 
+            if self.model_config['use_color']:
+                self.color_embedding = torch.nn.Embedding(train_data.num_values('color'), embed_dim, padding_idx=0)
+
+    
+    def get_feature_emb(self, batch, is_target=True):
+        if not is_target:
+            brand_emb = self.brand_embedding(batch['in_brand']) # [B, L, D]
+            material_emb = self.material_embedding(batch['in_material']) # [B, L, D]
+            author_emb = self.author_embedding(batch['in_author']) # [B, L, D]
+            feature_emb = brand_emb + material_emb + author_emb # [B, L, D]                    
+
+            if 'price' in self.use_fields:
+                price_emb = self.linear_price(batch['in_price'].unsqueeze(dim=-1)) # [B, L, D]
+                price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
+                feature_emb += price_emb
+
+            # st_time = time.time()
+            if 'color' in self.use_fields:
+                color_seq = batch['in_color'] # [B, L, N]
+                color_num_seq = batch['in_color_num'] # [B, L]
+                color_num_seq[color_num_seq == 0] = 1
+                color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, L, N, D] -> [B, L, D]
+                feature_emb += color_emb 
+            # ed_time = time.time()
+            # self.logger.info(f'color time : {ed_time - st_time}')
+
+
+        else:
+            brand_emb = self.brand_embedding(batch['brand']) # [B, D]
+            material_emb = self.material_embedding(batch['material']) # [B, D]
+            author_emb = self.author_embedding(batch['author']) # [B, D]
+            feature_emb = brand_emb + material_emb + author_emb
+
+            if 'price' in self.use_fields:
+                price_emb = self.linear_price(batch['price'].unsqueeze(dim=-1)) # [B, D]
+                price_emb = self.activate_price(self.norm_price(price_emb)) # [B, D]
+                feature_emb += price_emb
+
+            # st_time = time.time()
+            if 'color' in self.use_fields:
+                color_seq = batch['color'] # [B, N]
+                if 'color_num' in batch:
+                    color_num_seq = batch['color_num'] # [B]
+                else:
+                    color_num_seq = (batch['color'] != 0).sum(dim=-1) # [B]
+                color_num_seq[color_num_seq == 0] = 1
+                color_emb = self.color_embedding(color_seq).sum(dim=-2) / color_num_seq.unsqueeze(dim=-1) # [B, N, D] -> [B, D]
+                feature_emb += color_emb  
+            # ed_time = time.time()
+            # self.logger.info(f'color time : {ed_time - st_time}')
+
+        return feature_emb
+
+
+    def forward(self, batch, is_target=True):
+        # st_time = time.time()
+        item_feature_embeddings = self.get_feature_emb(batch, is_target=is_target) # [B, D] or [B, L, D]
+        if is_target:
+            item_id_embeddings = self.item_emb(batch[self.fiid]) # [B, D] or [B, L, D]
+        else:
+            item_id_embeddings = self.item_emb(batch['in_'+self.fiid]) # [B, D] or [B, L, D]
+        # ed_time = time.time()
+        # self.logger.info(f'encoder time : {ed_time - st_time}')
+        return item_feature_embeddings + item_id_embeddings
 
 
 class SASRec_Next_Feat(basemodel.BaseRetriever):
@@ -175,8 +206,25 @@ class SASRec_Next_Feat(basemodel.BaseRetriever):
 
     def _init_model(self, train_data, drop_unused_field=True):
         super()._init_model(train_data, drop_unused_field)
-        self.item_fields = {train_data.fiid} # only use product id as item feature, other product features are used in query feature.
-
+        self.num_items = train_data.num_items 
+        if self.use_product_feature:
+            use_field = set([train_data.fiid, 'brand', 'material', 'author'])
+            if self.config['model']['use_color']:
+                use_field.add('color')
+            if self.config['model']['use_price']:
+                use_field.add('price')
+            self.item_fields = use_field
+        else:
+            self.item_fields = {train_data.fiid} # only use product id as item feature, other product features are used in query feature.
+        
+        self.item_all_data = train_data.item_all_data
+        item_feat_data = self.item_feat.data
+        for k in item_feat_data.keys():
+            if 'index' in k:
+                idx_name = k
+        self.item_all_feat = self.item_all_data[item_feat_data[idx_name].type(torch.long)]
+        self.item_all_feat = self._get_item_feat(self.item_all_feat)
+        
     def _set_data_field(self, data):
         if self.use_product_feature:
             use_field = set([data.fuid, data.fiid, data.frating, 'locale', 'brand', 'material', 'author',
@@ -207,10 +255,8 @@ class SASRec_Next_Feat(basemodel.BaseRetriever):
         )
 
     def _get_item_encoder(self, train_data):
-        emb = torch.nn.Embedding(train_data.num_items, self.embed_dim, padding_idx=0)
-        if self.config['train'].get("pretrained_embed_file", None) is not None:
-            self.load_pretrained_embedding(emb, train_data, self.config['train']['pretrained_embed_file'])
-        return emb
+        model_config = self.config['model']
+        return SASRecFeatItemEncoder(train_data, model_config, self.embed_dim, self.use_product_feature)
 
     def _get_score_func(self):
         r"""InnerProduct is used as the score function."""
@@ -236,6 +282,46 @@ class SASRec_Next_Feat(basemodel.BaseRetriever):
             return None
         else:
             return sampler.UniformSampler(train_data.num_items) 
+        
+    def _get_item_vector(self):
+
+        # return self.item_encoder.item_emb.weight[1:]
+
+        if len(self.item_fields) == 1 and isinstance(self.item_encoder, torch.nn.Embedding):
+            return self.item_encoder.weight[1:]
+        else:
+            device = next(self.parameters()).device
+            self.item_all_feat = self._to_device(self.item_all_feat, device)
+            
+            # st_time = time.time()
+            # self.item_feat_data = self.item_feat.data
+            # for k in self.item_feat_data.keys():
+            #     if 'index' in k:
+            #         idx_name = k
+            # item_all_feat = self.item_all_data[self.item_feat_data[idx_name].type(torch.long)]
+            # en_time = time.time()
+            # self.logger.info(f'item_all_feat time : {en_time - st_time}s')
+
+            # st_time = time.time()
+            output = self.item_encoder(self.item_all_feat)
+            # en_time = time.time()
+            # self.logger.info(f'output time : {en_time - st_time}s')
+            return output[1:]
+        
+
+    def _update_item_vector(self):  # TODO: update frequency setting
+        # st_time = time.time()
+        item_vector = self._get_item_vector()
+        # en_time = time.time()
+        # self.logger.info(f'item vector time : {en_time - st_time}s')
+        if not hasattr(self, "item_vector"):
+            self.register_buffer('item_vector', item_vector.detach().clone() if isinstance(item_vector, torch.Tensor) \
+                else item_vector.copy())
+        else:
+            self.item_vector = item_vector
+
+        if self.use_index:
+            self.ann_index = self.build_ann_index()
 
     
     def load_pretrained_embedding(self, embedding_layer, train_data, path: str):

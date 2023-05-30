@@ -188,7 +188,11 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
 
         model.load_checkpoint(args.model_path)
         logger.info(f'model parameters are loaded from {args.model_path}')
-        item_embeddings = model.item_encoder.weight
+        if model_name == 'SASRec_Next_Text':
+            item_ids = torch.arange(0, model.num_items, dtype=torch.long, device=model._parameter_device)
+            item_embeddings = model.item_encoder(item_ids)
+        else:
+            item_embeddings = model.item_encoder.weight
         save_path = time.strftime(f"{model_name}/{dataset_name}/product_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
         save_path = os.path.join('./candidates/query_embeddings/', save_path)
         if not os.path.exists(os.path.dirname(save_path)):

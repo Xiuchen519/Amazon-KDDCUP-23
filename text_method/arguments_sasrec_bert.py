@@ -28,23 +28,57 @@ class ModelArguments:
 
     negatives_x_device : bool = field(default=False, metadata={"help" : "whether to use all negative items in all gpus."})
 
+    id_embed_dim: int = field(
+        default=768, 
+        metadata={
+            "help": "the embedding size of item id."
+        }
+    )
+
+    item_embed_dim: int = field(
+        default=256, 
+        metadata={
+            "help": "the embedding size of item."
+        }
+    )
+
+    sasrec_layers: int = field(
+        default=1, 
+    )
+
+    sasrec_n_head: int = field(
+        default=2, 
+    )
+
+    sasrec_hidden_size: int = field(
+        default=256, 
+    )
+
+    sasrec_dropout: float = field(
+        default=0.5, 
+    )
+
+    sasrec_activation: str = field(
+        default='gelu', 
+    )
+
 
 
 @dataclass
 class DataArguments:
 
     dataset_name: str = field(
-        default='kdd_cup_2023',
+        default='kdd_cup_2023_UK',
         metadata={"help" : "Name of used RecStudio Dataset."}
     )
 
     dataset_config_path: str = field(
-        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/RecStudio/recstudio/data/config/kdd_cup_2023_roberta.yaml',
+        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/RecStudio/recstudio/data/config/kdd_cup_2023_UK_bert.yaml',
         metadata={"help" : "Path of RecStudio Dataset config file."}
     )
 
     prediction_data_path: Optional[str] = field(
-        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task1_data/test_inter_feat_task1.csv',  
+        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task1_data/test_inter_feat_task1_UK.csv',  
         metadata={"help": "Path of prediction data."}
     )
 
@@ -72,12 +106,11 @@ class DataArguments:
 
     use_session_text: bool = field(default=False, metadata={"help" : "whether to use session text."})
 
-    use_product_text: bool = field(default=False, metadata={"help" : "whether to use product text."})
-
+    use_product_text: bool = field(default=True, metadata={"help" : "whether to use product text."})
 
 
     max_title_len: int = field(
-        default=50, 
+        default=70, 
         metadata={
             "help": "The maximum total input sequence length after tokenization for product title. Sequences longer "
                     "than this will be truncated, sequences shorter will be padded."
@@ -109,5 +142,14 @@ class DataArguments:
 
 @dataclass
 class SASRecBertTrainingArguments(TrainingArguments):
+    
     prediction_on : str = field(default='valid', metadata={"help" : "predict on valid dataset, test dataset or all items."})
+    
+    resume_checkpoint_path : Optional[str] = \
+        field(default=None, metadata={"help" : "which checkpoint to load and resume."})
+
+    
+
+
+    
     

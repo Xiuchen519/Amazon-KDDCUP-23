@@ -34,7 +34,7 @@ class ModelArguments:
 class DataArguments:
 
     dataset_name: str = field(
-        default='kdd_cup_2023',
+        default='kdd_cup_2023_UK',
         metadata={"help" : "Name of used RecStudio Dataset."}
     )
 
@@ -44,7 +44,7 @@ class DataArguments:
     )
 
     prediction_data_path: Optional[str] = field(
-        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task1_data/test_inter_feat_task1.csv',  
+        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task1_data/test_inter_feat_task1_UK.csv',  
         metadata={"help": "Path of prediction data."}
     )
 
@@ -70,9 +70,13 @@ class DataArguments:
 
     use_product_desc: bool = field(default=False, metadata={"help" : "whether to use product desc."})
 
+    use_session_text: bool = field(default=False, metadata={"help" : "whether to use session text."})
+
+    use_product_text: bool = field(default=False, metadata={"help" : "whether to use product text."})
+
 
     max_title_len: int = field(
-        default=70, 
+        default=50, 
         metadata={
             "help": "The maximum total input sequence length after tokenization for product title. Sequences longer "
                     "than this will be truncated, sequences shorter will be padded."
@@ -80,7 +84,7 @@ class DataArguments:
     )
 
     max_desc_len: int = field(
-        default=70, 
+        default=50, 
         metadata={
             "help": "The maximum total input sequence length after tokenization for product desc. Sequences longer "
                     "than this will be truncated, sequences shorter will be padded."
@@ -104,5 +108,10 @@ class DataArguments:
 
 @dataclass
 class SASRecBertTrainingArguments(TrainingArguments):
+    
     prediction_on : str = field(default='valid', metadata={"help" : "predict on valid dataset, test dataset or all items."})
+    
+    resume_checkpoint_path : Optional[str] = \
+        field(default=None, metadata={"help" : "which checkpoint to load and resume."})
+
     

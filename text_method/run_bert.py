@@ -9,7 +9,7 @@ from trainer import KDDCupTrainer
 from text_retriver import TextRetriver
 from arguments_bert import ModelArguments, DataArguments, \
     SASRecBertTrainingArguments as TrainingArguments
-from data import KDDCupProductCollator
+from data import KDDCupProductCollator, KDDCupProductCollator_Bert
 from transformers import AutoConfig, AutoTokenizer
 from transformers import (
     HfArgumentParser,
@@ -72,22 +72,6 @@ def main():
     )
     logger.info('Config: %s', config)
 
-    if training_args.do_train:
-        model = TextRetriver.build(
-            model_args,
-            training_args,
-            config=config,
-            cache_dir=model_args.cache_dir,
-        )
-
-    else:
-        model = TextRetriver.load(
-            model_args.model_name_or_path,
-            sentence_pooling_method=model_args.sentence_pooling_method,
-            negatives_x_device=model_args.negatives_x_device
-        )
-
-
     # Get Dataset
     data_conf = {}
     file_conf = parser_yaml(data_args.dataset_config_path)
@@ -105,18 +89,54 @@ def main():
 
     use_field_list = [datasets[0].fuid, datasets[0].fiid, datasets[0].frating, 'locale',
             'UK_index', 'DE_index', 'JP_index', 'ES_index', 'IT_index', 'FR_index']
-    if data_args.use_session_title: use_field_list.append('session_title')
-    if data_args.use_product_title: use_field_list.append('product_title')
-    if data_args.use_session_desc: use_field_list.append('session_desc')
-    if data_args.use_product_desc: use_field_list.append('product_desc')
+    
+    if data_args.use_session_title: 
+        use_field_list.append('session_title')
+        text_field = 'session_title_input'
+    if data_args.use_product_title: 
+        use_field_list.append('product_title')
+        text_field = 'product_title_input'
+    if data_args.use_session_desc: 
+        use_field_list.append('session_desc')
+        text_field = 'session_desc_input'
+    if data_args.use_product_desc: 
+        use_field_list.append('product_desc')
+        text_field = 'product_desc_input'
+    if data_args.use_session_text: 
+        use_field_list.append('session_text')
+        text_field = 'session_text_input'
+    if data_args.use_product_text: 
+        use_field_list.append('product_text')
+        text_field = 'product_text_input'
+
     datasets[0].use_field = set(use_field_list)
     datasets[1].use_field = set(use_field_list)
+    datasets[0].drop_feat(use_field_list)
+    datasets[1].drop_feat(use_field_list)
 
     if training_args.do_train:
         train_dataset = datasets[0]
         train_dataset.neg_count = data_args.neg_item_num # no need to preprocess dataset again when neg count is changed.
     else:
         train_dataset = None
+
+    # get model 
+    if training_args.do_train:
+        model = TextRetriver.build(
+            text_field, 
+            model_args,
+            training_args,
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
+
+    else:
+        model = TextRetriver.load(
+            text_field, 
+            model_args.model_name_or_path,
+            sentence_pooling_method=model_args.sentence_pooling_method,
+            negatives_x_device=model_args.negatives_x_device
+        )
 
     trainer = KDDCupTrainer(
         model=model,
@@ -126,10 +146,11 @@ def main():
     )
 
 
+
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
     # Training
     if training_args.do_train:
-        trainer.train()
+        trainer.train(resume_from_checkpoint=training_args.resume_checkpoint_path)
         trainer.save_model()
         # For convenience, we also re-save the tokenizer to the same directory,
         # so that you can share your model easily on huggingface.co/models =)
@@ -147,7 +168,7 @@ def main():
             Path(item_path).mkdir(parents=True, exist_ok=True)
 
             test_dataset = datasets[0].title_feat # 0 is the padding token 
-            trainer.data_collator = KDDCupProductCollator(tokenizer)
+            trainer.data_collator = KDDCupProductCollator_Bert(tokenizer, text_field)
 
             item_reps = trainer.predict(test_dataset=test_dataset).predictions
 
@@ -158,7 +179,12 @@ def main():
 
             if training_args.prediction_on == 'valid':
                 logging.info("*** Validation dataset Prediction ***")
-                test_dataset = datasets[1]
+                if data_args.prediction_data_path is None:
+                    test_dataset = datasets[1]
+                else:
+                    test_dataset = datasets[0].build_valid_dataset(data_args.prediction_data_path, ',', specified_path=True)
+                test_dataset.use_field = use_field_list
+                test_dataset.drop_feat(use_field_list)
                 test_dataset.predict_mode = True # set mode to prediction.
                 test_dataset.eval_mode = True 
                 query_path = os.path.join(data_args.prediction_save_path, 'valid_query_reps')
@@ -167,7 +193,8 @@ def main():
             elif training_args.prediction_on == 'test':
                 logging.info("*** Test dataset Prediction ***")
                 test_dataset = datasets[0].build_test_dataset(data_args.prediction_data_path)
-                test_dataset.use_field(use_field_list)
+                test_dataset.use_field = use_field_list
+                test_dataset.drop_feat(use_field_list)
                 test_dataset.predict_mode = True # set mode to prediction.
                 test_dataset.eval_mode = False 
                 query_path = os.path.join(data_args.prediction_save_path, 'test_query_reps')

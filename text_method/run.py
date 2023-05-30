@@ -6,10 +6,10 @@ from pathlib import Path
 
 import numpy as np
 from trainer import KDDCupTrainer
-from text_retriver import TextRetriver
-from arguments import ModelArguments, DataArguments, \
+from sasrec_bert import SASRec_Bert
+from arguments_sasrec_bert import ModelArguments, DataArguments, \
     SASRecBertTrainingArguments as TrainingArguments
-from data import KDDCupProductCollator
+from data import KDDCupProductCollator, KDDCupProductCollator_Bert
 from transformers import AutoConfig, AutoTokenizer
 from transformers import (
     HfArgumentParser,
@@ -72,22 +72,6 @@ def main():
     )
     logger.info('Config: %s', config)
 
-    if training_args.do_train:
-        model = TextRetriver.build(
-            model_args,
-            training_args,
-            config=config,
-            cache_dir=model_args.cache_dir,
-        )
-
-    else:
-        model = TextRetriver.load(
-            model_args.model_name_or_path,
-            sentence_pooling_method=model_args.sentence_pooling_method,
-            negatives_x_device=model_args.negatives_x_device
-        )
-
-
     # Get Dataset
     data_conf = {}
     file_conf = parser_yaml(data_args.dataset_config_path)
@@ -109,14 +93,38 @@ def main():
     if data_args.use_product_title: use_field_list.append('product_title')
     if data_args.use_session_desc: use_field_list.append('session_desc')
     if data_args.use_product_desc: use_field_list.append('product_desc')
+    if data_args.use_session_text: use_field_list.append('session_text')
+    if data_args.use_product_text: use_field_list.append('product_text')
+
     datasets[0].use_field = set(use_field_list)
     datasets[1].use_field = set(use_field_list)
+    datasets[0].drop_feat(use_field_list)
+    datasets[1].drop_feat(use_field_list)
 
     if training_args.do_train:
         train_dataset = datasets[0]
         train_dataset.neg_count = data_args.neg_item_num # no need to preprocess dataset again when neg count is changed.
     else:
         train_dataset = None
+
+    # Get Model
+    if training_args.do_train:
+        model = SASRec_Bert.build(
+            model_args,
+            training_args,
+            train_data=train_dataset,
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
+
+    else:
+        model = SASRec_Bert.load(
+            model_args.model_name_or_path,
+            sentence_pooling_method=model_args.sentence_pooling_method,
+            negatives_x_device=model_args.negatives_x_device,
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
 
     trainer = KDDCupTrainer(
         model=model,
@@ -129,7 +137,7 @@ def main():
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
     # Training
     if training_args.do_train:
-        trainer.train()
+        trainer.train(resume_from_checkpoint=training_args.resume_checkpoint_path)
         trainer.save_model()
         # For convenience, we also re-save the tokenizer to the same directory,
         # so that you can share your model easily on huggingface.co/models =)
@@ -147,7 +155,7 @@ def main():
             Path(item_path).mkdir(parents=True, exist_ok=True)
 
             test_dataset = datasets[0].title_feat # 0 is the padding token 
-            trainer.data_collator = KDDCupProductCollator(tokenizer)
+            trainer.data_collator = KDDCupProductCollator_Bert(tokenizer, 'session_title_input')
 
             item_reps = trainer.predict(test_dataset=test_dataset).predictions
 
@@ -159,6 +167,7 @@ def main():
             if training_args.prediction_on == 'valid':
                 logging.info("*** Validation dataset Prediction ***")
                 test_dataset = datasets[1]
+                test_dataset.use_field = use_field_list
                 test_dataset.predict_mode = True # set mode to prediction.
                 test_dataset.eval_mode = True 
                 query_path = os.path.join(data_args.prediction_save_path, 'valid_query_reps')
@@ -167,7 +176,8 @@ def main():
             elif training_args.prediction_on == 'test':
                 logging.info("*** Test dataset Prediction ***")
                 test_dataset = datasets[0].build_test_dataset(data_args.prediction_data_path)
-                test_dataset.use_field = set(use_field_list)
+                test_dataset.use_field = use_field_list
+                test_dataset.drop_feat(use_field_list)
                 test_dataset.predict_mode = True # set mode to prediction.
                 test_dataset.eval_mode = False 
                 query_path = os.path.join(data_args.prediction_save_path, 'test_query_reps')
