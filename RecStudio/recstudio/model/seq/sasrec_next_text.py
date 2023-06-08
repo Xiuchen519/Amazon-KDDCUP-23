@@ -98,8 +98,6 @@ class SASRecItemEncoder(torch.nn.Module):
             self.item_layernorm = torch.nn.LayerNorm(id_embed_dim)
 
         self.item_emb = torch.nn.Embedding(train_data.num_items, id_embed_dim, padding_idx=0)
-        if config['train'].get("pretrained_embed_file", None) is not None:
-            self.load_pretrained_embedding(self.item_emb, train_data, self.config['train']['pretrained_embed_file'])
         self.item_mlp = module.MLPModule(config['model']['item_layers'], 'ReLU', dropout=config['model']['item_dropout'], last_activation=False)
         
     def forward(self, item_ids):

@@ -145,6 +145,7 @@ datasets/*
 /data_for_recstudio/*.pkl
 /data_for_recstudio/*.npy
 /best_ckpt
+/best_ckpt_phase2
 /predictions
 *.parquet
 
@@ -179,6 +180,7 @@ scripts
 
 # candidates
 /candidates/query_embeddings
+/candidates_phase2/query_embeddings
 
 # BM25
 /bm25/cache

@@ -6,8 +6,8 @@ time_field: &t timestamp:float
 time_format: ~
 
 encoding_method: utf-8
-inter_feat_name: DE_train_inter_feat.csv
-valid_inter_feat_name: DE_valid_inter_feat.csv
+inter_feat_name: DE_train_inter_feat_phase2.csv
+valid_inter_feat_name: DE_valid_inter_feat_phase2.csv
 inter_feat_field: [*u, *i, *t, locale:token]
 inter_feat_header: 0
 

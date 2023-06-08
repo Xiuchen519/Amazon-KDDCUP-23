@@ -1,0 +1,42 @@
+data:
+  split_mode: user
+  split_ratio: [1.0]
+
+eval:
+  batch_size: 1024
+  predict_topk: 100
+  test_metrics: [recall, precision, map, ndcg, mrr, hit]
+  val_metrics: [mrr, recall, precision, ndcg]
+  cutoff: [100, 200, 300]
+  topk: 300
+
+model:
+  hidden_size: 256
+  dropout_rate: 0.5
+  layer_num: 2
+  loss_func: softmax
+  embed_dim: &embed_dim 128
+  use_product_feature: True
+  use_color: 0
+  use_price: 0 
+
+  # text
+  use_text_feat: False 
+  item_text_layers: [768, *embed_dim]
+  item_text_dropout: 0.0
+
+  # fusion
+  feat_id_concat: False
+  feat_id_layers: ~
+  feat_id_dropout: ~
+  item_text_vectors: /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/DE_data/DE_product_text_vectors.npy
+
+
+
+train:
+  batch_size: 1024
+  early_stop_patience: 10
+  epochs: 100
+  init_method: default
+  negative_count: ~
+  scheduler: onplateau

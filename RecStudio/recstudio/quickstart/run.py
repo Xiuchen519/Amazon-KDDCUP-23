@@ -124,9 +124,9 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
 
     data_dir = "/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio"
     # prediction for task1
-    prediction_inter_feat_DE_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_DE.csv')
-    prediction_inter_feat_JP_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_JP.csv')
-    prediction_inter_feat_UK_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_UK.csv')
+    prediction_inter_feat_DE_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_DE_phase2.csv')
+    prediction_inter_feat_JP_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_JP_phase2.csv')
+    prediction_inter_feat_UK_path = os.path.join(data_dir, 'task1_data/test_inter_feat_task1_UK_phase2.csv')
     task1_prediction_inter_feat_list = [prediction_inter_feat_DE_path, prediction_inter_feat_JP_path, prediction_inter_feat_UK_path]
 
     # prediction for task3
@@ -188,13 +188,14 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
 
         model.load_checkpoint(args.model_path)
         logger.info(f'model parameters are loaded from {args.model_path}')
-        if model_name == 'SASRec_Next_Text':
-            item_ids = torch.arange(0, model.num_items, dtype=torch.long, device=model._parameter_device)
-            item_embeddings = model.item_encoder(item_ids)
+        if 'Feat' in model_name:
+            item_embeddings = model._get_item_vector()
+            padding_vector = torch.tensor([0.0 for _ in range(item_embeddings.shape[-1])], device=item_embeddings.device).reshape(1, -1)
+            item_embeddings = torch.cat([padding_vector, item_embeddings], dim=0)
         else:
             item_embeddings = model.item_encoder.weight
         save_path = time.strftime(f"{model_name}/{dataset_name}/product_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
-        save_path = os.path.join('./candidates/query_embeddings/', save_path)
+        save_path = os.path.join('./candidates_phase2/query_embeddings/', save_path)
         if not os.path.exists(os.path.dirname(save_path)):
             os.makedirs(os.path.dirname(save_path))
         torch.save(item_embeddings, save_path)
@@ -205,7 +206,7 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
         query_dataset = datasets[1]
         query_embedding = model.encode_query(query_dataset, model_path=args.model_path, encode_data=mode)
         save_path = time.strftime(f"{model_name}/{dataset_name}/{mode}_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
-        save_path = os.path.join('./candidates/query_embeddings/', save_path)
+        save_path = os.path.join('./candidates_phase2/query_embeddings/', save_path)
         if not os.path.exists(os.path.dirname(save_path)):
             os.makedirs(os.path.dirname(save_path))
         torch.save(query_embedding, save_path)
@@ -223,7 +224,7 @@ def kdd_cup_run(model: str, dataset: str, args, model_config: Dict=None, data_co
             query_embedding_list.append(query_embedding)
         query_embedding = torch.cat(query_embedding_list, dim=0)
         save_path = time.strftime(f"{model_name}/{dataset_name}/{mode}_embeddings_%Y-%m-%d-%H-%M-%S.pt", time.localtime())
-        save_path = os.path.join('./candidates/query_embeddings/', save_path)
+        save_path = os.path.join('./candidates_phase2/query_embeddings/', save_path)
         if not os.path.exists(os.path.dirname(save_path)):
             os.makedirs(os.path.dirname(save_path))
         torch.save(query_embedding, save_path)

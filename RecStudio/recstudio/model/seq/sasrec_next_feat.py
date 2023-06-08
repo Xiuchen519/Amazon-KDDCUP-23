@@ -6,6 +6,7 @@ from recstudio.model.module import functional as recfn
 from recstudio.model import basemodel, loss_func, module, scorer
 import time
 import logging 
+import numpy as np 
 
 
 class SASRecQueryEncoder(torch.nn.Module):
@@ -93,12 +94,16 @@ class SASRecFeatItemEncoder(torch.nn.Module):
         self.use_product_feature = use_product_feature
 
         self.item_emb = torch.nn.Embedding(train_data.num_items, embed_dim, padding_idx=0)
+
+        # item categorical features  
         if self.use_product_feature:
             # price embedding
             if self.model_config['use_price']:
                 self.linear_price = torch.nn.Linear(1, embed_dim, bias=False)
-                self.norm_price = torch.nn.BatchNorm1d(embed_dim)
+                # self.norm_price = torch.nn.BatchNorm1d(embed_dim)
                 self.activate_price = torch.nn.ReLU()
+                self.linear_price_2 = torch.nn.Linear(embed_dim, embed_dim, bias=False)
+
             # brand embedding 
             self.brand_embedding = torch.nn.Embedding(train_data.num_values('brand'), embed_dim, padding_idx=0)
             # material embedding 
@@ -109,8 +114,17 @@ class SASRecFeatItemEncoder(torch.nn.Module):
             if self.model_config['use_color']:
                 self.color_embedding = torch.nn.Embedding(train_data.num_values('color'), embed_dim, padding_idx=0)
 
+        if self.model_config['use_text_feat']:
+            # item text features 
+            self.item_text_vectors = torch.from_numpy(np.load(self.model_config['item_text_vectors'])).type(torch.float)
+            self.item_text_emb = torch.nn.Embedding.from_pretrained(self.item_text_vectors, freeze=True, padding_idx=0)
+            self.item_text_mlp = module.MLPModule(self.model_config['item_text_layers'], 'ReLU', dropout=self.model_config['item_text_dropout'], last_activation=False)
+
+        if self.model_config['feat_id_concat']:
+            self.feat_id_mlp = module.MLPModule(self.model_config['feat_id_layers'], 'ReLU', dropout=self.model_config['feat_id_dropout'], last_activation=False)
+
     
-    def get_feature_emb(self, batch, is_target=True):
+    def get_cat_emb(self, batch, is_target=True):
         if not is_target:
             brand_emb = self.brand_embedding(batch['in_brand']) # [B, L, D]
             material_emb = self.material_embedding(batch['in_material']) # [B, L, D]
@@ -119,7 +133,8 @@ class SASRecFeatItemEncoder(torch.nn.Module):
 
             if 'price' in self.use_fields:
                 price_emb = self.linear_price(batch['in_price'].unsqueeze(dim=-1)) # [B, L, D]
-                price_emb = self.activate_price(self.norm_price(price_emb.transpose(-2, -1))).transpose(-2, -1)
+                price_emb = self.activate_price(price_emb)
+                price_emb = self.linear_price_2(price_emb)
                 feature_emb += price_emb
 
             # st_time = time.time()
@@ -158,18 +173,44 @@ class SASRecFeatItemEncoder(torch.nn.Module):
             # self.logger.info(f'color time : {ed_time - st_time}')
 
         return feature_emb
+    
 
+    def get_text_emb(self, batch, is_target=True):
+        if is_target:
+            item_ids = batch[self.fiid]
+        else:
+            item_ids = batch['in_'+self.fiid]
+        item_text_embeddings = self.item_text_emb(item_ids) # [B, D2] or [B, L, D2]
+        
+        # if self.model_config['feat_id_concat']:
+        #     return item_text_embeddings
+        # else:
+        #     return self.item_text_mlp(item_text_embeddings)
+        return self.item_text_mlp(item_text_embeddings)
 
     def forward(self, batch, is_target=True):
         # st_time = time.time()
-        item_feature_embeddings = self.get_feature_emb(batch, is_target=is_target) # [B, D] or [B, L, D]
+        # item categorical feature
+        item_cat_embeddings = self.get_cat_emb(batch, is_target=is_target) # [B, D] or [B, L, D]
+        if self.model_config['use_text_feat']:
+            item_text_embeddings = self.get_text_emb(batch, is_target=is_target)
+
         if is_target:
             item_id_embeddings = self.item_emb(batch[self.fiid]) # [B, D] or [B, L, D]
         else:
             item_id_embeddings = self.item_emb(batch['in_'+self.fiid]) # [B, D] or [B, L, D]
         # ed_time = time.time()
         # self.logger.info(f'encoder time : {ed_time - st_time}')
-        return item_feature_embeddings + item_id_embeddings
+        if self.model_config['use_text_feat']:
+            if self.model_config['feat_id_concat']:
+                return self.feat_id_mlp(torch.concat([item_cat_embeddings, item_text_embeddings, item_id_embeddings], dim=-1))
+            else:
+                return item_cat_embeddings + item_text_embeddings + item_id_embeddings
+        else:
+            if self.model_config['feat_id_concat']:
+                return self.feat_id_mlp(torch.concat([item_cat_embeddings, item_id_embeddings], dim=-1))
+            else:
+                return item_cat_embeddings + item_id_embeddings
 
 
 class SASRec_Next_Feat(basemodel.BaseRetriever):
@@ -338,6 +379,29 @@ class SASRec_Next_Feat(basemodel.BaseRetriever):
         assert emb.shape == embedding_layer.weight.shape
         embedding_layer.weight.data = emb
         torch.nn.init.constant_(embedding_layer.weight.data[embedding_layer.padding_idx], 0.)
+
+
+    def _get_ckpt_param(self):
+        '''
+        Returns:
+            OrderedDict: the parameters to be saved as check point.
+        '''
+        ckpt_param = self.state_dict()
+        if 'item_encoder.item_text_emb.weight' in ckpt_param:
+            del ckpt_param['item_encoder.item_text_emb.weight']
+        if 'query_encoder.item_encoder.item_text_emb.weight' in ckpt_param:
+            del ckpt_param['query_encoder.item_encoder.item_text_emb.weight']
+        return ckpt_param
+    
+    def load_checkpoint(self, path: str) -> None:
+        ckpt = torch.load(path, map_location=self._parameter_device)
+
+        self.config['model'] = ckpt['config']['model']
+        if hasattr(self, '_update_item_vector'):
+            self._update_item_vector()
+            if 'item_vector' not in ckpt['parameters']:
+                ckpt['parameters']['item_vector'] = self.item_vector
+        self.load_state_dict(ckpt['parameters'], strict=False)
 
     # def candidate_topk(self, batch, k, user_h=None, return_query=False):
     #     self.item_vector = self.item_encoder(batch['last_item_candidates']) # [B, 300]

@@ -44,7 +44,7 @@ class DataArguments:
     )
 
     prediction_data_path: Optional[str] = field(
-        default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/task1_data/test_inter_feat_task1_UK.csv',  
+        default=None,
         metadata={"help": "Path of prediction data."}
     )
 

@@ -42,7 +42,7 @@ parser.add_argument('--features', nargs='+', type=str,
 
 parser.add_argument('--random_seed', type=int, default=42)
 parser.add_argument('--early_stop_patience', type=int, default=500)
-parser.add_argument('--merged_candidates_path', type=str, default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/XGBoost/candidates/merged_candidates_feature.parquet')
+parser.add_argument('--merged_candidates_path', type=str, default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/XGBoost/candidates_phase2/merged_candidates_cut_250_feature.parquet')
 parser.add_argument('--gpu', type=int, default=1)
 args = parser.parse_args() 
 

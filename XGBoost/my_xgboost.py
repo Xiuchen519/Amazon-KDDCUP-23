@@ -42,7 +42,7 @@ parser.add_argument('--features', nargs='+', type=str,
 
 parser.add_argument('--random_seed', type=int, default=42)
 parser.add_argument('--early_stop_patience', type=int, default=500)
-parser.add_argument('--merged_candidates_path', type=str, default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/XGBoost/candidates/merged_candidates_feature.parquet')
+parser.add_argument('--merged_candidates_path', type=str, default='/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/XGBoost/candidates_phase2/merged_candidates_150_feature.parquet')
 parser.add_argument('--gpu', type=int, default=0)
 args = parser.parse_args() 
 
@@ -101,6 +101,7 @@ with open(f'./XGBoost/logs/XGB_{cur_time}.log', 'a') as f:
     for k, v in xgb_parms.items():
         f.write(f'{k} : {v} \n')
 
+avg_score = 0.0
 for fold,(train_idx, valid_idx) in enumerate(skf.split(candidates_with_features, candidates_with_features['target'], groups=candidates_with_features['sess_id'] )):
     
     print('#'*25)
@@ -124,13 +125,13 @@ for fold,(train_idx, valid_idx) in enumerate(skf.split(candidates_with_features,
     dtrain = xgb.DMatrix(X_train, y_train, group=group_size_train, enable_categorical=True) 
     dvalid = xgb.DMatrix(X_valid, y_valid, group=group_size_valid, enable_categorical=True) 
 
-    res = {'train' : {'ndcg@100-' : []}, 'valid' : {'ndcg@100-' : []}}
+    # res = {'train' : {'ndcg@100-' : []}, 'valid' : {'ndcg@100-' : []}}
     model = xgb.train(xgb_parms, 
         dtrain=dtrain,
         evals=[(dtrain,'train'),(dvalid,'valid')],
         num_boost_round=10000,
         early_stopping_rounds=args.early_stop_patience,
-        evals_result=res,
+        # evals_result=res,
         verbose_eval=100)
     
     ed_time = time.time()
@@ -144,3 +145,8 @@ for fold,(train_idx, valid_idx) in enumerate(skf.split(candidates_with_features,
         f.write(f'Best score : {model.best_score} Best iteration : {model.best_iteration}\n')
 
     model.save_model(f'./XGBoost/ckpt/XGB_{cur_time}_fold{fold}.json')
+    avg_score += model.best_score
+
+avg_score = avg_score / FOLDS
+with open(f'./XGBoost/logs/XGB_{cur_time}.log', 'a') as f:
+    f.write(f'avg_score : {avg_score} ')
