@@ -154,6 +154,12 @@ datasets/*
 *.csv
 *.ftr
 
+# models
+/RecStudio/recstudio/model/seq/seqslot_low.py
+/RecStudio/recstudio/model/seq/seqslot.py
+/RecStudio/recstudio/model/seq/config/seqslot_low.yaml
+/RecStudio/recstudio/model/seq/config/seqslot.yaml
+
 # RetroMAE
 /RetroMAE/examples/retriever/kdd_cup/data
 /RetroMAE/examples/retriever/kdd_cup/kdd_cup_results
