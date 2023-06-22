@@ -137,7 +137,7 @@ class SASRec_Next(basemodel.BaseRetriever):
             hidden_size=model_config['hidden_size'], dropout=model_config['dropout_rate'],
             activation=model_config['activation'], layer_norm_eps=model_config['layer_norm_eps'],
             n_layer=model_config['layer_num'],
-            item_encoder=self.item_encoder
+            item_encoder=self.item_encoder, bidirectional=model_config['bidirectional']
         )
 
     def _get_item_encoder(self, train_data):

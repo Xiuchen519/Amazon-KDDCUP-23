@@ -19,6 +19,7 @@ parser.add_argument('--max_depth', type=int, default=4)
 parser.add_argument('--subsample', type=float, default=0.7)
 parser.add_argument('--colsample', type=float, default=0.5)
 parser.add_argument('--learning_rate', type=float, default=0.1)
+parser.add_argument('--reg_lambda', type=float, default=1.0)
 parser.add_argument('--features', nargs='+', type=str, 
     default=['product_freq', 'product_price',
              'sasrec_scores_2', 'normalized_sasrec_scores_2', 
@@ -88,7 +89,8 @@ xgb_parms = {
     'scale_pos_weight': 200,
     'tree_method': 'gpu_hist',
     'predictor': 'gpu_predictor',
-    'random_state': SEED
+    'random_state': SEED,
+    'lambda': args.reg_lambda,
 }
 
 skf = GroupKFold(n_splits=FOLDS)
