@@ -1,0 +1,336 @@
+[2023-06-07 11:48:03] INFO Log saved in /root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.log.
+[2023-06-07 11:48:03] INFO Global seed set to 2022
+[2023-06-07 11:48:03] INFO Load dataset from cache ./.recstudio/cache/8d133ea55ad67bd3efd625dfeff0fb1d
+[2023-06-07 11:48:10] INFO 
+Dataset Info: 
+
+==================================================================
+item information: 
+field      product_id UK_index   
+type       token      float      
+##         500181     -          
+==================================================================
+user information: 
+field      sess_id    
+type       token      
+##         1434055    
+==================================================================
+interaction information: 
+field      rating     sess_id    product_id timestamp  locale     
+type       float      token      token      float      token      
+##         -          1434055    500181     -          2          
+==================================================================
+Total Interactions: 6963409
+Sparsity: 0.999990
+==================================================================
+[2023-06-07 11:48:10] INFO 
+Model Config: 
+
+data:
+	binarized_rating_thres=None
+	fm_eval=False
+	neg_count=0
+	sampler=None
+	shuffle=True
+	split_mode=user
+	split_ratio=[1.0]
+	test_rep=True
+	train_rep=True
+eval:
+	batch_size=1024
+	cutoff=[100, 200, 300]
+	val_metrics=['mrr', 'recall', 'precision', 'ndcg']
+	val_n_epoch=1
+	test_metrics=['recall', 'precision', 'map', 'ndcg', 'mrr', 'hit']
+	topk=300
+	save_path=./saved/
+	num_workers=8
+	predict_topk=100
+model:
+	embed_dim=128
+	item_bias=False
+	hidden_size=256
+	dropout_rate=[0.25, 0.5]
+	layer_num=1
+	loss_func=softmax
+	use_product_feature=1
+	use_color=0
+	use_price=0
+	use_text_feat=0
+	item_text_layers=[768, 128]
+	item_text_dropout=0.0
+	feat_id_concat=0
+	feat_id_layers=None
+	feat_id_dropout=None
+	item_text_vectors=/root/autodl-tmp/xiaolong/WorkSpace/Amazon-KDDCUP-23/data_for_recstudio/UK_data/UK_product_text_vectors.npy
+train:
+	accelerator=gpu
+	ann=None
+	batch_size=1024
+	early_stop_mode=max
+	early_stop_patience=10
+	epochs=300
+	gpu=4
+	grad_clip_norm=None
+	init_method=default
+	init_range=0.02
+	item_batch_size=1024
+	learner=adam
+	learning_rate=0.001
+	num_threads=10
+	num_workers=8
+	sampling_method=none
+	sampler=uniform
+	negative_count=None
+	excluding_hist=False
+	scheduler=onplateau
+	scheduler_patience=2
+	scheduler_factor=0.5
+	seed=2022
+	weight_decay=0.0
+	tensorboard_path=None
+	use_wandb=False
+	wandb_project=None
+	wandb_count=0
+[2023-06-07 11:48:12] INFO save_dir:./saved/
+[2023-06-07 11:48:12] INFO NARM_Feat(
+  (score_func): InnerProductScorer()
+  (loss_fn): SoftmaxLoss()
+  (item_encoder): NARMFeatItemEncoder(
+    (item_emb): Embedding(500181, 128, padding_idx=0)
+    (brand_embedding): Embedding(72756, 128, padding_idx=0)
+    (material_embedding): Embedding(13609, 128, padding_idx=0)
+    (author_embedding): Embedding(8383, 128, padding_idx=0)
+  )
+  (query_encoder): NARMQueryEncoder(
+    (item_encoder): NARMFeatItemEncoder(
+      (item_emb): Embedding(500181, 128, padding_idx=0)
+      (brand_embedding): Embedding(72756, 128, padding_idx=0)
+      (material_embedding): Embedding(13609, 128, padding_idx=0)
+      (author_embedding): Embedding(8383, 128, padding_idx=0)
+    )
+    (gru_layer): Sequential(
+      (0): Dropout(p=0.25, inplace=False)
+      (1): GRULayer(
+        (gru): GRU(128, 256, bias=False, batch_first=True)
+      )
+    )
+    (A_1): Linear(in_features=256, out_features=256, bias=False)
+    (A_2): Linear(in_features=256, out_features=256, bias=False)
+    (gather_layer): SeqPoolingLayer(pooling_type=last, keepdim=False)
+    (attn_layer): AttentionLayer(
+      (mlp): Sequential(
+        (0): MLPModule(
+          (model): Sequential(
+            (0): Dropout(p=0.0, inplace=False)
+            (1): Linear(in_features=512, out_features=256, bias=False)
+            (2): Sigmoid()
+          )
+        )
+        (1): Linear(in_features=256, out_features=1, bias=True)
+      )
+    )
+    (fc): Sequential(
+      (0): Dropout(p=0.5, inplace=False)
+      (1): Linear(in_features=512, out_features=128, bias=False)
+    )
+  )
+)
+[2023-06-07 11:48:12] INFO GPU id [4] are selected.
+[2023-06-07 11:56:52] INFO Training: Epoch=  0 [mrr@100=0.1336 recall@100=0.3670 precision@100=0.0037 ndcg@100=0.1803 train_loss_0=9.3823]
+[2023-06-07 11:56:52] INFO Train time: 505.33236s. Valid time: 9.22425s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 11:56:52] INFO Current learning rate : 0.001
+[2023-06-07 11:56:54] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 11:56:54] INFO mrr@100 improved. Best value: 0.1336
+[2023-06-07 12:05:26] INFO Training: Epoch=  1 [mrr@100=0.1738 recall@100=0.4277 precision@100=0.0043 ndcg@100=0.2247 train_loss_0=7.8879]
+[2023-06-07 12:05:26] INFO Train time: 504.50104s. Valid time: 8.16289s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:05:26] INFO Current learning rate : 0.001
+[2023-06-07 12:05:30] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:05:30] INFO mrr@100 improved. Best value: 0.1738
+[2023-06-07 12:14:02] INFO Training: Epoch=  2 [mrr@100=0.2033 recall@100=0.4759 precision@100=0.0048 ndcg@100=0.2581 train_loss_0=7.1021]
+[2023-06-07 12:14:02] INFO Train time: 504.15186s. Valid time: 8.23467s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:14:02] INFO Current learning rate : 0.001
+[2023-06-07 12:14:05] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:14:05] INFO mrr@100 improved. Best value: 0.2033
+[2023-06-07 12:22:34] INFO Training: Epoch=  3 [mrr@100=0.2227 recall@100=0.5099 precision@100=0.0051 ndcg@100=0.2806 train_loss_0=6.5746]
+[2023-06-07 12:22:34] INFO Train time: 500.19549s. Valid time: 8.69788s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:22:34] INFO Current learning rate : 0.001
+[2023-06-07 12:22:36] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:22:36] INFO mrr@100 improved. Best value: 0.2227
+[2023-06-07 12:31:09] INFO Training: Epoch=  4 [mrr@100=0.2383 recall@100=0.5375 precision@100=0.0054 ndcg@100=0.2988 train_loss_0=6.2011]
+[2023-06-07 12:31:09] INFO Train time: 502.58421s. Valid time: 9.98204s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:31:09] INFO Current learning rate : 0.001
+[2023-06-07 12:31:11] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:31:11] INFO mrr@100 improved. Best value: 0.2383
+[2023-06-07 12:39:58] INFO Training: Epoch=  5 [mrr@100=0.2511 recall@100=0.5588 precision@100=0.0056 ndcg@100=0.3135 train_loss_0=5.9230]
+[2023-06-07 12:39:58] INFO Train time: 518.30736s. Valid time: 8.67572s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:39:58] INFO Current learning rate : 0.001
+[2023-06-07 12:40:01] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:40:01] INFO mrr@100 improved. Best value: 0.2511
+[2023-06-07 12:48:47] INFO Training: Epoch=  6 [mrr@100=0.2591 recall@100=0.5746 precision@100=0.0057 ndcg@100=0.3231 train_loss_0=5.7091]
+[2023-06-07 12:48:47] INFO Train time: 517.36876s. Valid time: 8.44376s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:48:47] INFO Current learning rate : 0.001
+[2023-06-07 12:48:50] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:48:50] INFO mrr@100 improved. Best value: 0.2591
+[2023-06-07 12:57:29] INFO Training: Epoch=  7 [mrr@100=0.2654 recall@100=0.5863 precision@100=0.0059 ndcg@100=0.3306 train_loss_0=5.5395]
+[2023-06-07 12:57:29] INFO Train time: 510.48243s. Valid time: 8.25685s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 12:57:29] INFO Current learning rate : 0.001
+[2023-06-07 12:57:31] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 12:57:31] INFO mrr@100 improved. Best value: 0.2654
+[2023-06-07 13:06:16] INFO Training: Epoch=  8 [mrr@100=0.2720 recall@100=0.5974 precision@100=0.0060 ndcg@100=0.3382 train_loss_0=5.4013]
+[2023-06-07 13:06:16] INFO Train time: 515.91508s. Valid time: 9.15450s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:06:16] INFO Current learning rate : 0.001
+[2023-06-07 13:06:19] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:06:19] INFO mrr@100 improved. Best value: 0.2720
+[2023-06-07 13:14:52] INFO Training: Epoch=  9 [mrr@100=0.2762 recall@100=0.6046 precision@100=0.0060 ndcg@100=0.3430 train_loss_0=5.2837]
+[2023-06-07 13:14:52] INFO Train time: 504.61246s. Valid time: 7.97865s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:14:52] INFO Current learning rate : 0.001
+[2023-06-07 13:14:54] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:14:54] INFO mrr@100 improved. Best value: 0.2762
+[2023-06-07 13:23:22] INFO Training: Epoch= 10 [mrr@100=0.2800 recall@100=0.6117 precision@100=0.0061 ndcg@100=0.3475 train_loss_0=5.1800]
+[2023-06-07 13:23:22] INFO Train time: 500.18953s. Valid time: 7.73798s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:23:22] INFO Current learning rate : 0.001
+[2023-06-07 13:23:25] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:23:25] INFO mrr@100 improved. Best value: 0.2800
+[2023-06-07 13:32:06] INFO Training: Epoch= 11 [mrr@100=0.2819 recall@100=0.6164 precision@100=0.0062 ndcg@100=0.3501 train_loss_0=5.0865]
+[2023-06-07 13:32:06] INFO Train time: 511.23198s. Valid time: 9.41658s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:32:06] INFO Current learning rate : 0.001
+[2023-06-07 13:32:09] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:32:09] INFO mrr@100 improved. Best value: 0.2819
+[2023-06-07 13:40:58] INFO Training: Epoch= 12 [mrr@100=0.2845 recall@100=0.6217 precision@100=0.0062 ndcg@100=0.3532 train_loss_0=5.0005]
+[2023-06-07 13:40:58] INFO Train time: 520.43485s. Valid time: 8.76278s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:40:58] INFO Current learning rate : 0.001
+[2023-06-07 13:41:01] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:41:01] INFO mrr@100 improved. Best value: 0.2845
+[2023-06-07 13:49:46] INFO Training: Epoch= 13 [mrr@100=0.2854 recall@100=0.6249 precision@100=0.0062 ndcg@100=0.3547 train_loss_0=4.9231]
+[2023-06-07 13:49:46] INFO Train time: 516.42572s. Valid time: 8.30756s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:49:46] INFO Current learning rate : 0.001
+[2023-06-07 13:49:49] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:49:49] INFO mrr@100 improved. Best value: 0.2854
+[2023-06-07 13:58:36] INFO Training: Epoch= 14 [mrr@100=0.2877 recall@100=0.6284 precision@100=0.0063 ndcg@100=0.3572 train_loss_0=4.8542]
+[2023-06-07 13:58:36] INFO Train time: 518.70144s. Valid time: 7.88325s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 13:58:36] INFO Current learning rate : 0.001
+[2023-06-07 13:58:39] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 13:58:39] INFO mrr@100 improved. Best value: 0.2877
+[2023-06-07 14:07:36] INFO Training: Epoch= 15 [mrr@100=0.2886 recall@100=0.6314 precision@100=0.0063 ndcg@100=0.3585 train_loss_0=4.7920]
+[2023-06-07 14:07:36] INFO Train time: 527.92685s. Valid time: 9.39922s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 14:07:36] INFO Current learning rate : 0.001
+[2023-06-07 14:07:40] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 14:07:40] INFO mrr@100 improved. Best value: 0.2886
+[2023-06-07 14:16:27] INFO Training: Epoch= 16 [mrr@100=0.2897 recall@100=0.6316 precision@100=0.0063 ndcg@100=0.3595 train_loss_0=4.7358]
+[2023-06-07 14:16:27] INFO Train time: 520.06389s. Valid time: 7.76312s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 14:16:27] INFO Current learning rate : 0.001
+[2023-06-07 14:16:29] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 14:16:29] INFO mrr@100 improved. Best value: 0.2897
+[2023-06-07 14:25:35] INFO Training: Epoch= 17 [mrr@100=0.2909 recall@100=0.6340 precision@100=0.0063 ndcg@100=0.3610 train_loss_0=4.6837]
+[2023-06-07 14:25:35] INFO Train time: 535.14220s. Valid time: 10.38977s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 14:25:35] INFO Current learning rate : 0.001
+[2023-06-07 14:25:39] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 14:25:39] INFO mrr@100 improved. Best value: 0.2909
+[2023-06-07 14:34:54] INFO Training: Epoch= 18 [mrr@100=0.2917 recall@100=0.6357 precision@100=0.0064 ndcg@100=0.3619 train_loss_0=4.6357]
+[2023-06-07 14:34:54] INFO Train time: 546.23102s. Valid time: 9.29681s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 14:34:54] INFO Current learning rate : 0.001
+[2023-06-07 14:34:56] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 14:34:56] INFO mrr@100 improved. Best value: 0.2917
+[2023-06-07 14:44:07] INFO Training: Epoch= 19 [mrr@100=0.2931 recall@100=0.6369 precision@100=0.0064 ndcg@100=0.3633 train_loss_0=4.5909]
+[2023-06-07 14:44:07] INFO Train time: 541.55181s. Valid time: 9.08583s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 14:44:07] INFO Current learning rate : 0.001
+[2023-06-07 14:44:10] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 14:44:10] INFO mrr@100 improved. Best value: 0.2931
+[2023-06-07 14:52:54] INFO Training: Epoch= 20 [mrr@100=0.2942 recall@100=0.6377 precision@100=0.0064 ndcg@100=0.3643 train_loss_0=4.5486]
+[2023-06-07 14:52:54] INFO Train time: 515.22582s. Valid time: 9.01405s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 14:52:54] INFO Current learning rate : 0.001
+[2023-06-07 14:52:57] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 14:52:57] INFO mrr@100 improved. Best value: 0.2942
+[2023-06-07 15:01:43] INFO Training: Epoch= 21 [mrr@100=0.2953 recall@100=0.6393 precision@100=0.0064 ndcg@100=0.3655 train_loss_0=4.5090]
+[2023-06-07 15:01:43] INFO Train time: 517.40953s. Valid time: 8.12590s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:01:43] INFO Current learning rate : 0.001
+[2023-06-07 15:01:46] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 15:01:46] INFO mrr@100 improved. Best value: 0.2953
+[2023-06-07 15:10:27] INFO Training: Epoch= 22 [mrr@100=0.2951 recall@100=0.6379 precision@100=0.0064 ndcg@100=0.3651 train_loss_0=4.4716]
+[2023-06-07 15:10:27] INFO Train time: 513.03150s. Valid time: 7.54276s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:10:27] INFO Current learning rate : 0.001
+[2023-06-07 15:18:59] INFO Training: Epoch= 23 [mrr@100=0.2945 recall@100=0.6390 precision@100=0.0064 ndcg@100=0.3648 train_loss_0=4.4337]
+[2023-06-07 15:18:59] INFO Train time: 503.17441s. Valid time: 8.99488s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:18:59] INFO Current learning rate : 0.001
+[2023-06-07 15:27:46] INFO Training: Epoch= 24 [mrr@100=0.2947 recall@100=0.6385 precision@100=0.0064 ndcg@100=0.3649 train_loss_0=4.3984]
+[2023-06-07 15:27:46] INFO Train time: 518.09379s. Valid time: 8.91925s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:27:46] INFO Current learning rate : 0.0005
+[2023-06-07 15:36:44] INFO Training: Epoch= 25 [mrr@100=0.2998 recall@100=0.6421 precision@100=0.0064 ndcg@100=0.3698 train_loss_0=4.2215]
+[2023-06-07 15:36:44] INFO Train time: 528.41039s. Valid time: 9.68650s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:36:44] INFO Current learning rate : 0.0005
+[2023-06-07 15:36:47] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 15:36:47] INFO mrr@100 improved. Best value: 0.2998
+[2023-06-07 15:45:44] INFO Training: Epoch= 26 [mrr@100=0.2997 recall@100=0.6418 precision@100=0.0064 ndcg@100=0.3697 train_loss_0=4.1875]
+[2023-06-07 15:45:44] INFO Train time: 526.32979s. Valid time: 10.21569s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:45:44] INFO Current learning rate : 0.0005
+[2023-06-07 15:55:51] INFO Training: Epoch= 27 [mrr@100=0.3000 recall@100=0.6409 precision@100=0.0064 ndcg@100=0.3698 train_loss_0=4.1646]
+[2023-06-07 15:55:51] INFO Train time: 599.54736s. Valid time: 8.00139s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 15:55:51] INFO Current learning rate : 0.0005
+[2023-06-07 15:55:55] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 15:55:55] INFO mrr@100 improved. Best value: 0.3000
+[2023-06-07 16:04:52] INFO Training: Epoch= 28 [mrr@100=0.2996 recall@100=0.6413 precision@100=0.0064 ndcg@100=0.3695 train_loss_0=4.1433]
+[2023-06-07 16:04:52] INFO Train time: 528.82213s. Valid time: 8.45288s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 16:04:52] INFO Current learning rate : 0.0005
+[2023-06-07 16:13:43] INFO Training: Epoch= 29 [mrr@100=0.2996 recall@100=0.6402 precision@100=0.0064 ndcg@100=0.3693 train_loss_0=4.1222]
+[2023-06-07 16:13:43] INFO Train time: 522.84160s. Valid time: 8.35397s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 16:13:43] INFO Current learning rate : 0.0005
+[2023-06-07 16:22:21] INFO Training: Epoch= 30 [mrr@100=0.2995 recall@100=0.6396 precision@100=0.0064 ndcg@100=0.3691 train_loss_0=4.1031]
+[2023-06-07 16:22:21] INFO Train time: 508.72243s. Valid time: 9.37132s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 16:22:21] INFO Current learning rate : 0.00025
+[2023-06-07 16:31:44] INFO Training: Epoch= 31 [mrr@100=0.3015 recall@100=0.6408 precision@100=0.0064 ndcg@100=0.3709 train_loss_0=4.0042]
+[2023-06-07 16:31:45] INFO Train time: 553.52315s. Valid time: 9.62495s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 16:31:45] INFO Current learning rate : 0.00025
+[2023-06-07 16:31:48] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 16:31:48] INFO mrr@100 improved. Best value: 0.3015
+[2023-06-07 16:42:02] INFO Training: Epoch= 32 [mrr@100=0.3015 recall@100=0.6398 precision@100=0.0064 ndcg@100=0.3707 train_loss_0=3.9873]
+[2023-06-07 16:42:03] INFO Train time: 603.49159s. Valid time: 10.68721s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 16:42:03] INFO Current learning rate : 0.00025
+[2023-06-07 16:52:08] INFO Training: Epoch= 33 [mrr@100=0.3015 recall@100=0.6401 precision@100=0.0064 ndcg@100=0.3708 train_loss_0=3.9752]
+[2023-06-07 16:52:08] INFO Train time: 593.81383s. Valid time: 11.75497s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 16:52:08] INFO Current learning rate : 0.00025
+[2023-06-07 16:52:10] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 16:52:10] INFO mrr@100 improved. Best value: 0.3015
+[2023-06-07 17:02:18] INFO Training: Epoch= 34 [mrr@100=0.3018 recall@100=0.6390 precision@100=0.0064 ndcg@100=0.3708 train_loss_0=3.9636]
+[2023-06-07 17:02:18] INFO Train time: 596.24392s. Valid time: 11.39423s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 17:02:18] INFO Current learning rate : 0.00025
+[2023-06-07 17:02:21] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 17:02:21] INFO mrr@100 improved. Best value: 0.3018
+[2023-06-07 17:12:08] INFO Training: Epoch= 35 [mrr@100=0.3010 recall@100=0.6396 precision@100=0.0064 ndcg@100=0.3703 train_loss_0=3.9521]
+[2023-06-07 17:12:08] INFO Train time: 577.85812s. Valid time: 8.91579s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 17:12:08] INFO Current learning rate : 0.00025
+[2023-06-07 17:21:54] INFO Training: Epoch= 36 [mrr@100=0.3014 recall@100=0.6389 precision@100=0.0064 ndcg@100=0.3705 train_loss_0=3.9416]
+[2023-06-07 17:21:54] INFO Train time: 575.61945s. Valid time: 9.64968s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 17:21:54] INFO Current learning rate : 0.00025
+[2023-06-07 17:31:57] INFO Training: Epoch= 37 [mrr@100=0.3009 recall@100=0.6385 precision@100=0.0064 ndcg@100=0.3700 train_loss_0=3.9325]
+[2023-06-07 17:31:57] INFO Train time: 593.58851s. Valid time: 10.04547s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 17:31:57] INFO Current learning rate : 0.000125
+[2023-06-07 17:41:37] INFO Training: Epoch= 38 [mrr@100=0.3009 recall@100=0.6383 precision@100=0.0064 ndcg@100=0.3700 train_loss_0=3.8787]
+[2023-06-07 17:41:37] INFO Train time: 568.48051s. Valid time: 11.32766s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 17:41:37] INFO Current learning rate : 0.000125
+[2023-06-07 17:51:18] INFO Training: Epoch= 39 [mrr@100=0.3016 recall@100=0.6385 precision@100=0.0064 ndcg@100=0.3705 train_loss_0=3.8692]
+[2023-06-07 17:51:18] INFO Train time: 570.84922s. Valid time: 9.93305s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 17:51:18] INFO Current learning rate : 0.000125
+[2023-06-07 18:01:30] INFO Training: Epoch= 40 [mrr@100=0.3015 recall@100=0.6381 precision@100=0.0064 ndcg@100=0.3704 train_loss_0=3.8630]
+[2023-06-07 18:01:30] INFO Train time: 600.44408s. Valid time: 11.62299s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 18:01:30] INFO Current learning rate : 6.25e-05
+[2023-06-07 18:11:45] INFO Training: Epoch= 41 [mrr@100=0.3012 recall@100=0.6383 precision@100=0.0064 ndcg@100=0.3702 train_loss_0=3.8355]
+[2023-06-07 18:11:45] INFO Train time: 599.49501s. Valid time: 15.68154s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 18:11:45] INFO Current learning rate : 6.25e-05
+[2023-06-07 18:22:03] INFO Training: Epoch= 42 [mrr@100=0.3014 recall@100=0.6386 precision@100=0.0064 ndcg@100=0.3704 train_loss_0=3.8306]
+[2023-06-07 18:22:03] INFO Train time: 605.62587s. Valid time: 12.03064s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 18:22:03] INFO Current learning rate : 6.25e-05
+[2023-06-07 18:32:20] INFO Training: Epoch= 43 [mrr@100=0.3012 recall@100=0.6383 precision@100=0.0064 ndcg@100=0.3702 train_loss_0=3.8265]
+[2023-06-07 18:32:20] INFO Train time: 606.17203s. Valid time: 11.20081s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 18:32:20] INFO Current learning rate : 3.125e-05
+[2023-06-07 18:42:23] INFO Training: Epoch= 44 [mrr@100=0.3014 recall@100=0.6380 precision@100=0.0064 ndcg@100=0.3703 train_loss_0=3.8118]
+[2023-06-07 18:42:23] INFO Train time: 590.92403s. Valid time: 11.38587s. GPU RAM: 11.56/23.70 GB
+[2023-06-07 18:42:23] INFO Current learning rate : 3.125e-05
+[2023-06-07 18:42:23] INFO Early stopped. Since the metric mrr@100 haven't been improved for 10 epochs.
+[2023-06-07 18:42:23] INFO The best score of mrr@100 is 0.3018 on epoch 34
+[2023-06-07 18:42:25] INFO Best model checkpoint saved in ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt.
+[2023-06-07 18:42:37] INFO Testing:  [recall@100=0.6390 precision@100=0.0064 map@100=0.3018 ndcg@100=0.3708 mrr@100=0.3018 hit@100=0.6390 recall@200=0.6789 precision@200=0.0034 map@200=0.3021 ndcg@200=0.3764 mrr@200=0.3021 hit@200=0.6789 recall@300=0.6979 precision@300=0.0023 map@300=0.3021 ndcg@300=0.3788 mrr@300=0.3021 hit@300=0.6979]
+[2023-06-07 18:42:51] INFO Load checkpoint from ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt
+[2023-06-07 18:43:27] INFO Load checkpoint from ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt
+[2023-06-07 18:44:05] INFO Load checkpoint from ./saved/NARM_Feat/kdd_cup_2023_UK/2023-06-07-11-48-03.ckpt
+[2023-06-07 18:44:41] INFO Prediction is finished, results are saved in ./predictions/NARM_Feat/kdd_cup_2023_UK/2023-06-07-18-42-37.parquet.

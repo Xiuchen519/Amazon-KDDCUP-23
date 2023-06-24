@@ -55,8 +55,8 @@ coverage.xml
 *.mo
 *.pot
 
-# Django stuff:
-*.log
+# # Django stuff:
+# *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -181,6 +181,7 @@ scripts
 /XGBoost/ckpt
 /XGBoost/cat_ckpt
 /XGBoost/logs
+/XGBoost/cat_logs
 /XGBoost/candidates
 /catboost_info/ 
 
