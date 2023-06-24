@@ -2,7 +2,9 @@
 
 ## Overview
 
-The objective of the task1 is to make recommendation for the next item in a session in DE, JP and UK. We use three types of single models, including deep recommendation system models, text models, and statistics-based co-graph models to retrieve canidates for every sessions. And then a reranker is trained to obtain more accurate ranking results.  
+The objective of the task1 is to make recommendation for the next item in a session in DE, JP and UK. We use three types of single models, including deep recommendation system models, text models, and statistics-based co-graph models to retrieve canidates for every sessions. And then a reranker is trained to obtain more accurate ranking results. 
+
+We use [RecStudio](https://github.com/ustcml/RecStudio) to implement all the deep recommendation models.
 
 ## Data Preparation
 
