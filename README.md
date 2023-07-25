@@ -2,7 +2,7 @@
 
 ## Overview
 
-The objective of the task1 is to make recommendation for the next item in a session in DE, JP and UK. We use three types of single models, including deep recommendation system models, text models, and statistics-based co-graph models to retrieve canidates for every sessions. And then a reranker is trained to obtain more accurate ranking results. 
+The objective of the task 1 is to make recommendation for the next item in a session in DE, JP and UK. We use three types of single models, including deep recommendation system models, text models, and statistics-based co-graph models to retrieve canidates for every sessions. And then a reranker is trained to obtain more accurate ranking results. 
 
 We use [RecStudio](https://github.com/ustcml/RecStudio) to implement all the deep recommendation models.
 
@@ -12,7 +12,7 @@ We use [RecStudio](https://github.com/ustcml/RecStudio) to implement all the dee
 
 - Run `data_preprocess/phase2/data_split.ipynb` with random seed `2022`  to split data. 
 
-In phase 2 we use the same data split as LYX. We split data separately for every locale and train individual models for every locale.
+In phase 2 we use the same data split as [LYX](https://gitlab.aicrowd.com/Fire/kddcup2023). We split data separately for every locale and train individual models for every locale.
 
 First, for every locale, we split the training sessions into the training dataset and validation dataset in a ratio of 0.92 to 0.08. We utilize the last items in sessions of the validation dataset to assess models' performance offline.  And second, we remove the next items of the sessions in the validation dataset and use the sessions without the next items in the validation dataset and test dataset to extend the training dataset. The figure below shows this process. 
 
@@ -104,13 +104,13 @@ We utilize a certain strategy to calculate the co-occurrence relationships betwe
 
 We use XGBoost to train a reranker on the validation dataset, and use the trained reranker to infer on the test dataset to get the final submission. 
 
-In the last few days, my teammates and I merged our features and fine-tuned XGBoost. Our best result was obtained by ensembling three XGBoost models with different features and parameters using average score. The final version XGBoost can be seen in LYX's repository. 
+In the last few days, my teammates and I merged our features and fine-tuned XGBoost. Our best result was obtained by ensembling three XGBoost models with different features and parameters using average score. The final version XGBoost can be seen in [LYX's](https://gitlab.aicrowd.com/Fire/kddcup2023) repository. 
 
 **Get candidates for sessions**:
 
 The final candidates are obtained by merging the candidates from the three methods.
 
-1. 100 candidates from LYX's `sasrec_i2i` (Unirec/output/DE_final_dataset/SASRec/i2i/SASRec.2023-05-25_042825.2.txt in LYX's repository)
+1. 100 candidates from [LYX's](https://gitlab.aicrowd.com/Fire/kddcup2023) `sasrec_i2i` (Unirec/output/DE_final_dataset/SASRec/i2i/SASRec.2023-05-25_042825.2.txt in LYX's repository)
 2. 100 candidates from `xlm-roberta`
 3. top-100 candidates from a  `co-graph ` model 
 
