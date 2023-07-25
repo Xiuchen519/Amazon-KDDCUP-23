@@ -2,7 +2,7 @@
 
 ## Overview
 
-The objective of the task1 is to make recommendation for the next item in a session in DE, JP and UK. We use three types of single models, including deep recommendation system models, text models, and statistics-based co-graph models to retrieve canidates for every sessions. And then a reranker is trained to obtain more accurate ranking results.  
+The objective of the task 1 is to make recommendation for the next item in a session in DE, JP, and UK. We use three types of single models, including deep recommendation system models, text models, and statistics-based co-graph models to retrieve candidates for every session. And then a reranker is trained to obtain more accurate ranking results.  
 
 ## Data Preparation
 
@@ -10,25 +10,25 @@ The objective of the task1 is to make recommendation for the next item in a sess
 
 - Run `data_preprocess/phase2/data_split.ipynb` with random seed `2022`  to split data. 
 
-In phase2 we use the same data split as LYX. We split data sperately for every locale and train individual models for every locale.
+In phase 2 we use the same data split as LYX. We split data separately for every locale and train individual models for every locale.
 
-First, for every locale, we split the train sessions into training dataset and validation dataset in a ratio of 0.92 to 0.08. We utilize the last items in sessions of validation dataset to assess models' performance offline.  And second, we remove the next items of the sessions in validation dataset and use the sessions without next items in validation dataset and test dataset to extend training dataset. The figure below shows this process. 
+First, for every locale, we split the training sessions into the training dataset and validation dataset in a ratio of 0.92 to 0.08. We utilize the last items in sessions of the validation dataset to assess models' performance offline.  And second, we remove the next items of the sessions in the validation dataset and use the sessions without the next items in the validation dataset and test dataset to extend the training dataset. The figure below shows this process. 
 
 <img src="imgs/data_split.png" style="zoom: 50%;" />
 
 ### Product Feature Process
 
-- Run `data_preprocess/product_feature_process.ipynb` to get processed product. 
+- Run `data_preprocess/product_feature_process.ipynb` to get the processed product. 
 
 Product features are processed before they are used by models.
 
-For color, we discard unpopular colors and split color text containing multi colors into color list. 
+For color, we discard unpopular colors and split color text containing multi-colors into a color list. 
 
-For price, we replace the abnormal price 40000000.07 with the average price in corresponding locale. 
+For price, we replace the abnormal price 40000000.07 with the average price in the corresponding locale. 
 
-For brand, material and author, we converted all the words to lowercase. 
+For brand, material, and author, we converted all the words to lowercase. 
 
-And we append color, brand, material and author features to the end of title and desc features. 
+And we append color, brand, material, and author features to the end of the title and desc features. 
 
 ## Train Single Model 
 
@@ -42,18 +42,14 @@ We employed four models with different frameworks to model sessions, including S
 
 We train a separate recommendation system model for each locale on its corresponding item set because we found that yields significantly better results compared to training a single model for all three locales. 
 
-**Training method**: For an item within a session, we utilize up to 10 most recent items to make prediction for it.  Every session is cut into several slices to use every item except the first in the session as training target. The figure below shows the training method. 
+**Training method**: For an item within a session, we utilize up to 10 most recent items to make prediction for it.  Every session is cut into several slices to use every item except the first in the session as a training target. The figure below shows the training method. 
 
 <img src="imgs/rec_train.png" alt="rec_train" style="zoom:50%;" />
 
 **Loss function**: For all recommendation system models, to achieve better model performance, we train the models using full softmax loss function on the entire item set. The formula for full softmax loss function is as follows: 
-$$
-p_{i, j} = \frac{ \mathrm{exp}(\mathbf{u}_{i}^{\top} \mathbf{v}_{j}) }{ \sum_{k}^{\left | I \right | } \mathrm{exp}(\mathbf{u}_{i}^{\top} \mathbf{v}_{k}) }
-$$
+$$ p_{i, j} = \frac{ \mathrm{exp}(\mathbf{u}_{i}^{\top} \mathbf{v}_{j}) }{ \sum_{k}^{\left | I \right | } \mathrm{exp}(\mathbf{u}_{i}^{\top} \mathbf{v}_{k}) } $$
 
-$$
-loss = \sum_{i}^{\left | U \right |}- \mathrm{log}(p_{i, target_{i}})
-$$
+$$ loss = \sum_{i}^{\left | U \right |}- \mathrm{log}(p_{i, target_{i}}) $$
 
 **How to run**:
 
@@ -63,7 +59,7 @@ $$
 
 **Scripts and logs**: 
 
- The scripts with hyperparameters for training and query encoding of all models are saved in saved in `./saved_scripts` and logs are saved in `./saved_logs`. 
+ The scripts with hyperparameters for training and query encoding of all models are saved in `./saved_scripts` and logs are saved in `./saved_logs`. 
 
 ### Text Models using xlm-RoBERTa and Bert 
 
@@ -80,7 +76,7 @@ The products possess rich textual features, including titles and descriptions. T
 | bert-base-japanese-whole-word-masking (JP) | https://huggingface.co/cl-tohoku/bert-base-japanese-whole-word-masking |
 | roberta-base (UK)                          | https://huggingface.co/roberta-base                          |
 
-**Training method**: For each session in training dataset, the last item is used as target item and the recent 5 items are used as user history. We concatenate the 5 items' text to form the query and we use sampled-softmax with in-batch negative sampling. 
+**Training method**: For each session in the training dataset, the last item is used as the target item and the recent 5 items are used as user history. We concatenate the 5 items' text to form the query and we use sampled-softmax with in-batch negative sampling. 
 
 **How to run**:
 
@@ -89,7 +85,7 @@ The products possess rich textual features, including titles and descriptions. T
 - Run `./reorder_product_title_vectors.ipynb` to reorder the item representations according to the order used in base recommendation models to provide items' text feature for them. 
 - Run `./text_method/test.py` to retrieve candidates for sessions. 
 
-**Scripts**: All scripts for training, inference and test are in `./saved_scripts/text_models`. 
+**Scripts**: All scripts for training, inference, and test are in `./saved_scripts/text_models`. 
 
 ### Co-graph models 
 
@@ -103,7 +99,7 @@ We utilize a certain strategy to calculate the co-occurrence relationships betwe
 
 ## Train Reranker
 
-We use XGBoost to train a reranker on validation dataset, and use the trained reranker to inference on test dataset to get the final submission. 
+We use XGBoost to train a reranker on the validation dataset, and use the trained reranker to infer on the test dataset to get the final submission. 
 
 In the last few days, my teammates and I merged our features and fine-tuned XGBoost. Our best result was obtained by ensembling three XGBoost models with different features and parameters using average score. The final version XGBoost can be seen in LYX's repository. 
 
@@ -123,7 +119,7 @@ Run `./XGBoost/merge_candidates.ipynb` to merge them.
 - scores and the normalized scores from text models 
 - scores from BM25
 - co-graph counts using 6 strategies 
-- statistical features, such as average price of session/price of the candidate, item frequency, next item frequency and so on 
+- statistical features, such as the average price of session/price of the candidate, item frequency, next item frequency and so on 
 
 Run all the notebooks in `XGBoost/merge_features` and `XGBoost/merge_features/test` to merge all the features. 
 
