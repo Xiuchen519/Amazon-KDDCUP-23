@@ -47,6 +47,7 @@ We train a separate recommendation system model for each locale on its correspon
 <img src="imgs/rec_train.png" alt="rec_train" style="zoom:50%;" />
 
 **Loss function**: For all recommendation system models, to achieve better model performance, we train the models using full softmax loss function on the entire item set. The formula for full softmax loss function is as follows: 
+
 $$ p_{i, j} = \frac{ \mathrm{exp}(\mathbf{u}_{i}^{\top} \mathbf{v}_{j}) }{ \sum_{k}^{\left | I \right | } \mathrm{exp}(\mathbf{u}_{i}^{\top} \mathbf{v}_{k}) } $$
 
 $$ loss = \sum_{i}^{\left | U \right |}- \mathrm{log}(p_{i, target_{i}}) $$
